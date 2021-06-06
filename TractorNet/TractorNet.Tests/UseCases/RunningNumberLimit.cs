@@ -31,21 +31,21 @@ namespace TractorNet.Tests.UseCases
                     {
                         // unbounded by default
                         tractorBuilder.UseRunningNumberLimit(RunningLimit);
+                    });
 
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
-                        });
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
+                    });
 
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("456"));
-                        });
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("456"));
+                    });
 
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("789"));
-                        });
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("789"));
                     });
                 })
                 .Build();
@@ -74,14 +74,12 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            // unbounded by default
-                            actorBuilder.UseRunningNumberLimit(RunningLimit);
-                            actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
-                        });
+                        // unbounded by default
+                        actorBuilder.UseRunningNumberLimit(RunningLimit);
+                        actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
                     });
                 })
                 .Build();
@@ -110,15 +108,13 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            // unbounded by default
-                            actorBuilder.UseRunningNumberLimit(RunningLimit);
-                            actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
-                            actorBuilder.UseBatching();
-                        });
+                        // unbounded by default
+                        actorBuilder.UseRunningNumberLimit(RunningLimit);
+                        actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
+                        actorBuilder.UseBatching();
                     });
                 })
                 .Build();

@@ -34,21 +34,21 @@ namespace TractorNet.Tests.UseCases
                     services.AddTractor(tractorBuilder =>
                     {
                         tractorBuilder.UseLaunchTrottleTime(trottleTime);
+                    });
 
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
-                        });
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
+                    });
 
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("456"));
-                        });
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("456"));
+                    });
 
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("789"));
-                        });
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("789"));
                     });
                 })
                 .Build();
@@ -80,13 +80,11 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseLaunchTrottleTime(trottleTime);
-                            actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
-                        });
+                        actorBuilder.UseLaunchTrottleTime(trottleTime);
+                        actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
                     });
                 })
                 .Build();
@@ -118,14 +116,12 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseLaunchTrottleTime(trottleTime);
-                            actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
-                            actorBuilder.UseBatching();
-                        });
+                        actorBuilder.UseLaunchTrottleTime(trottleTime);
+                        actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
+                        actorBuilder.UseBatching();
                     });
                 })
                 .Build();
@@ -155,14 +151,12 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseLaunchTrottleTime(trottleTime);
-                            actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
-                            actorBuilder.UseBatching();
-                        });
+                        actorBuilder.UseLaunchTrottleTime(trottleTime);
+                        actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
+                        actorBuilder.UseBatching();
                     });
                 })
                 .Build();

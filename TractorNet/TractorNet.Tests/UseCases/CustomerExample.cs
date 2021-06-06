@@ -46,13 +46,10 @@ namespace TractorNet.Tests.UseCases
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton(resultsChannel);
-
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor<CustomerActor>(actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor<CustomerActor>(actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("actors/customer/"));
-                        });
+                        actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("actors/customer/"));
                     });
                 })
                 .Build();

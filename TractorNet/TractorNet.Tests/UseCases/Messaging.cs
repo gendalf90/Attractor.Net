@@ -38,12 +38,10 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
-                        });
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
                     });
                 })
                 .Build();
@@ -74,13 +72,11 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractor();
+                    services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor(OnReceiveAsync, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
-                            actorBuilder.UseBatching();
-                        });
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
+                        actorBuilder.UseBatching();
                     });
                 })
                 .Build();

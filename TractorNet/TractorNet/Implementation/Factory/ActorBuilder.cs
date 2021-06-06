@@ -50,14 +50,14 @@ namespace TractorNet.Implementation.Factory
             runningNumberLimit = limit;
         }
 
-        public void AddDecorator<T>() where T : class, IActorDecorator
+        public void UseDecorator<T>() where T : class, IActorDecorator
         {
             services.TryAddScoped<T>();
 
             services.AddScoped(provider => new ActorDecoratorTypedWrapper(provider.GetRequiredService<T>()));
         }
 
-        public void AddDecorator(Func<IServiceProvider, IActorDecorator> factory)
+        public void UseDecorator(Func<IServiceProvider, IActorDecorator> factory)
         {
             if (factory == null)
             {
@@ -67,7 +67,7 @@ namespace TractorNet.Implementation.Factory
             services.AddScoped(provider => new ActorDecoratorTypedWrapper(factory(provider)));
         }
 
-        public void AddDecorator(Func<IActor, ReceivedMessageContext, CancellationToken, ValueTask> strategy)
+        public void UseDecorator(Func<IActor, ReceivedMessageContext, CancellationToken, ValueTask> strategy)
         {
             if (strategy == null)
             {

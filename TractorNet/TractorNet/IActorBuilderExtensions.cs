@@ -6,14 +6,14 @@ namespace TractorNet
 {
     public static class IActorBuilderExtensions
     {
-        public static void AddDecorator(this IActorBuilder builder, Action<IActor, ReceivedMessageContext, CancellationToken> strategy)
+        public static void UseDecorator(this IActorBuilder builder, Action<IActor, ReceivedMessageContext, CancellationToken> strategy)
         {
             if (strategy == null)
             {
                 throw new ArgumentNullException(nameof(strategy));
             }
 
-            builder.AddDecorator((actor, context, token) =>
+            builder.UseDecorator((actor, context, token) =>
             {
                 strategy(actor, context, token);
 

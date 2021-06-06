@@ -4,11 +4,11 @@ using TractorNet.Implementation.Message;
 
 namespace TractorNet.Implementation.Factory
 {
-    internal sealed class MemoryMessagesBuilder : IMemoryMessagesBuilder
+    internal sealed class MemoryMailboxBuilder : IMemoryMailboxBuilder
     {
         private readonly IServiceCollection services;
 
-        public MemoryMessagesBuilder(IServiceCollection services)
+        public MemoryMailboxBuilder(IServiceCollection services)
         {
             this.services = services;
         }

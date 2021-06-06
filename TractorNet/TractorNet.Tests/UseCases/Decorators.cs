@@ -99,50 +99,48 @@ namespace TractorNet.Tests.UseCases
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton(completionResultsChannel);
+                    services.AddTractor();
 
-                    services.AddTractor(tractorBuilder =>
+                    // common decorators that are applied to each actor
+                    services.UseDecorator<FirstCommonActorDecorator>();
+                    services.UseDecorator(provider =>
                     {
-                        // common decorators that are applied to each actor
-                        tractorBuilder.AddDecorator<FirstCommonActorDecorator>();
-                        tractorBuilder.AddDecorator(provider =>
+                        return new ParameterizedActorDecorator(2, 12, provider.GetRequiredService<Channel<int>>());
+                    });
+                    services.UseDecorator(async (actor, context, token) =>
+                    {
+                        await completionResultsChannel.Writer.WriteAsync(3);
+                        await actor.OnReceiveAsync(context, token);
+                        await completionResultsChannel.Writer.WriteAsync(11);
+                    });
+
+                    services.RegisterActor(async (context, token) =>
+                    {
+                        await context
+                            .Metadata
+                            .GetFeature<IReceivedMessageFeature>()
+                            .ConsumeAsync();
+
+                        await completionResultsChannel.Writer.WriteAsync(7);
+                    }, actorBuilder =>
+                    {
+                        // specific actor decorators
+                        actorBuilder.UseDecorator<FirstSpecificActorDecorator>();
+                        actorBuilder.UseDecorator(provider =>
                         {
-                            return new ParameterizedActorDecorator(2, 12, provider.GetRequiredService<Channel<int>>());
+                            return new ParameterizedActorDecorator(5, 9, provider.GetRequiredService<Channel<int>>());
                         });
-                        tractorBuilder.AddDecorator(async (actor, context, token) =>
+                        actorBuilder.UseDecorator(async (actor, context, token) =>
                         {
-                            await completionResultsChannel.Writer.WriteAsync(3);
+                            await completionResultsChannel.Writer.WriteAsync(6);
                             await actor.OnReceiveAsync(context, token);
-                            await completionResultsChannel.Writer.WriteAsync(11);
+                            await completionResultsChannel.Writer.WriteAsync(8);
                         });
 
-                        tractorBuilder.RegisterActor(async (context, token) =>
+                        if (useBatching)
                         {
-                            await context
-                                .Metadata
-                                .GetFeature<IReceivedMessageFeature>()
-                                .ConsumeAsync();
-
-                            await completionResultsChannel.Writer.WriteAsync(7);
-                        }, actorBuilder =>
-                        {
-                            // specific actor decorators
-                            actorBuilder.AddDecorator<FirstSpecificActorDecorator>();
-                            actorBuilder.AddDecorator(provider =>
-                            {
-                                return new ParameterizedActorDecorator(5, 9, provider.GetRequiredService<Channel<int>>());
-                            });
-                            actorBuilder.AddDecorator(async (actor, context, token) =>
-                            {
-                                await completionResultsChannel.Writer.WriteAsync(6);
-                                await actor.OnReceiveAsync(context, token);
-                                await completionResultsChannel.Writer.WriteAsync(8);
-                            });
-
-                            if (useBatching)
-                            {
-                                actorBuilder.UseBatching();
-                            }
-                        });
+                            actorBuilder.UseBatching();
+                        }
                     });
                 })
                 .Build();

@@ -14,11 +14,11 @@ namespace TractorNet
 
         void UseBatching(Action<IBatchBuilder> configuration = null);
 
-        void AddDecorator<T>() where T : class, IActorDecorator;
+        void UseDecorator<T>() where T : class, IActorDecorator;
 
-        void AddDecorator(Func<IServiceProvider, IActorDecorator> factory);
+        void UseDecorator(Func<IServiceProvider, IActorDecorator> factory);
 
-        void AddDecorator(Func<IActor, ReceivedMessageContext, CancellationToken, ValueTask> strategy);
+        void UseDecorator(Func<IActor, ReceivedMessageContext, CancellationToken, ValueTask> strategy);
 
         void UseAddressPolicy<T>() where T : class, IAddressPolicy;
 

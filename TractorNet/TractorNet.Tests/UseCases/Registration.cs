@@ -64,35 +64,33 @@ namespace TractorNet.Tests.UseCases
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton(completionTrigger);
+                    services.AddTractor();
 
-                    services.AddTractor(tractorBuilder =>
+                    services.RegisterActor<TestActor>(actorBuilder =>
                     {
-                        tractorBuilder.RegisterActor<TestActor>(actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy<AbcAddressPolicy>();
-                        });
+                        actorBuilder.UseAddressPolicy<AbcAddressPolicy>();
+                    });
 
-                        tractorBuilder.RegisterActor(provider =>
-                        {
-                            return new TestActor(provider.GetRequiredService<CountdownEvent>());
-                        }, actorBuilder =>
-                        {
-                            actorBuilder.UseAddressPolicy(_ => new StringAddressPolicy("def"));
-                        });
+                    services.RegisterActor(provider =>
+                    {
+                        return new TestActor(provider.GetRequiredService<CountdownEvent>());
+                    }, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => new StringAddressPolicy("def"));
+                    });
 
-                        tractorBuilder.RegisterActor(async (context, token) =>
-                        {
-                            await context
-                                .Metadata
-                                .GetFeature<IReceivedMessageFeature>()
-                                .ConsumeAsync();
+                    services.RegisterActor(async (context, token) =>
+                    {
+                        await context
+                            .Metadata
+                            .GetFeature<IReceivedMessageFeature>()
+                            .ConsumeAsync();
 
-                            completionTrigger.Signal();
-                        }, actorBuilder =>
-                        {
-                            actorBuilder.UseBatching();
-                            actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("ghi"));
-                        });
+                        completionTrigger.Signal();
+                    }, actorBuilder =>
+                    {
+                        actorBuilder.UseBatching();
+                        actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("ghi"));
                     });
                 })
                 .Build();

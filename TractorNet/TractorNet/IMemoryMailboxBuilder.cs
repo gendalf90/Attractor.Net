@@ -2,7 +2,7 @@
 
 namespace TractorNet
 {
-    public interface IMemoryMessagesBuilder
+    public interface IMemoryMailboxBuilder
     {
         void UseReadTrottleTime(TimeSpan time);
     }
