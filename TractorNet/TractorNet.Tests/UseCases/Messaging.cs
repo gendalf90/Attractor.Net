@@ -99,5 +99,90 @@ namespace TractorNet.Tests.UseCases
 
             await host.StopAsync();
         }
+
+        [Fact]
+        public async Task RunWithDelayingMessage()
+        {
+            // Arrange
+            var resultsChannel = Channel.CreateUnbounded<DateTime>();
+
+            using var host = new HostBuilder()
+                .ConfigureServices(services =>
+                {
+                    services.AddTractor();
+                    services.RegisterActor(async (context, token) =>
+                    {
+                        await resultsChannel.Writer.WriteAsync(DateTime.UtcNow);
+                        await context
+                            .Metadata
+                            .GetFeature<IReceivedMessageFeature>()
+                            .ConsumeAsync();
+                    }, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("address"));
+                    });
+                })
+                .Build();
+
+            // Act
+            await host.StartAsync();
+
+            var outbox = host.Services.GetRequiredService<IAnonymousOutbox>();
+
+            var timeOfSending = DateTime.UtcNow;
+
+            await outbox.SendMessageAsync(TestStringAddress.CreateAddress("address"), Mock.Of<IPayload>(), new SendingMetadata
+            {
+                Delay = TimeSpan.FromSeconds(1)
+            });
+
+            var timeOfReceiving = await resultsChannel.Reader.ReadAsync();
+
+            await host.StopAsync();
+
+            // Assert
+            Assert.True(timeOfReceiving - timeOfSending >= TimeSpan.FromSeconds(1));
+        }
+
+        [Fact]
+        public async Task RunWithExpiringMessage()
+        {
+            // Arrange
+            var resultsChannel = Channel.CreateUnbounded<string>();
+
+            using var host = new HostBuilder()
+                .ConfigureServices(services =>
+                {
+                    services.AddTractor();
+                    services.RegisterActor(async (context, token) =>
+                    {
+                        var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();
+
+                        await resultsChannel.Writer.WriteAsync(TestStringPayload.ToString(feature));
+                    }, actorBuilder =>
+                    {
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("address"));
+                    });
+                })
+                .Build();
+
+            // Act
+            await host.StartAsync();
+
+            var outbox = host.Services.GetRequiredService<IAnonymousOutbox>();
+
+            await outbox.SendMessageAsync(TestStringAddress.CreateAddress("address"), TestStringPayload.Create("payload"), new SendingMetadata
+            {
+                Delay = TimeSpan.FromSeconds(1),
+                Ttl = TimeSpan.FromMilliseconds(500)
+            });
+
+            await Task.Delay(TimeSpan.FromSeconds(2));
+
+            await host.StopAsync();
+
+            // Assert
+            Assert.False(resultsChannel.Reader.TryRead(out _));
+        }
     }
 }

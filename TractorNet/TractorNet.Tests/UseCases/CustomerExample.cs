@@ -12,30 +12,6 @@ namespace TractorNet.Tests.UseCases
 {
     public class CustomerExample
     {
-        private class CustomerActor : IActor
-        {
-            private readonly Channel<string> resultsChannel;
-
-            public CustomerActor(Channel<string> resultsChannel)
-            {
-                this.resultsChannel = resultsChannel;
-            }
-
-            public async ValueTask OnReceiveAsync(ReceivedMessageContext context, CancellationToken token = default)
-            {
-                var message = context.Metadata.GetFeature<IReceivedMessageFeature>();
-                var customerId = GetId(message);
-
-                await resultsChannel.Writer.WriteAsync(customerId, token);
-                await message.ConsumeAsync(token);
-            }
-
-            private string GetId(IAddress address)
-            {
-                return TestStringAddress.ToString(address).Split('/').Last();
-            }
-        }
-
         [Fact]
         public async Task Run()
         {
@@ -76,6 +52,30 @@ namespace TractorNet.Tests.UseCases
             Assert.Contains("3", ids);
 
             await host.StopAsync();
+        }
+
+        private class CustomerActor : IActor
+        {
+            private readonly Channel<string> resultsChannel;
+
+            public CustomerActor(Channel<string> resultsChannel)
+            {
+                this.resultsChannel = resultsChannel;
+            }
+
+            public async ValueTask OnReceiveAsync(ReceivedMessageContext context, CancellationToken token = default)
+            {
+                var message = context.Metadata.GetFeature<IReceivedMessageFeature>();
+                var customerId = GetId(message);
+
+                await resultsChannel.Writer.WriteAsync(customerId, token);
+                await message.ConsumeAsync(token);
+            }
+
+            private string GetId(IAddress address)
+            {
+                return TestStringAddress.ToString(address).Split('/').Last();
+            }
         }
     }
 }
