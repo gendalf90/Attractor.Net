@@ -16,5 +16,13 @@ namespace TractorNet.Implementation.Common
                 disposable.Dispose();
             }
         }
+
+        public static void TryDispose(this object obj)
+        {
+            if (obj is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 }

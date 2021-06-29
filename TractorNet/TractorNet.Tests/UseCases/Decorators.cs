@@ -36,12 +36,12 @@ namespace TractorNet.Tests.UseCases
             }
         }
 
-        private class FirstSpecificActorDecorator : IActorDecorator
+        private class FirstActorDecorator : IActorDecorator
         {
             private Channel<int> resultsChannel;
             private IActor nextActor;
 
-            public FirstSpecificActorDecorator(Channel<int> resultsChannel)
+            public FirstActorDecorator(Channel<int> resultsChannel)
             {
                 this.resultsChannel = resultsChannel;
             }
@@ -125,7 +125,7 @@ namespace TractorNet.Tests.UseCases
                     }, actorBuilder =>
                     {
                         // specific actor decorators
-                        actorBuilder.UseDecorator<FirstSpecificActorDecorator>();
+                        actorBuilder.UseDecorator<FirstActorDecorator>();
                         actorBuilder.UseDecorator(provider =>
                         {
                             return new ParameterizedActorDecorator(5, 9, provider.GetRequiredService<Channel<int>>());

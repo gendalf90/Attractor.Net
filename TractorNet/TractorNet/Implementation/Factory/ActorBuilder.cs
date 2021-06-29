@@ -119,14 +119,14 @@ namespace TractorNet.Implementation.Factory
             batchReceivingSettings.ExecutionTimeout = time;
         }
 
-        public void UseProcessedMessagesLimit(int limit)
+        public void UseRunCountLimit(int limit)
         {
             if (limit <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(limit));
             }
 
-            batchReceivingSettings.MessageProcessedLimit = limit;
+            batchReceivingSettings.RunCountLimit = limit;
         }
 
         public void UseMessageReceivingTimeout(TimeSpan time)
@@ -286,7 +286,7 @@ namespace TractorNet.Implementation.Factory
             }
         }
 
-        private class ActorTypedWrapper : IActor, IAsyncDisposable
+        private class ActorTypedWrapper : IActor, IDisposable
         {
             private readonly IActor actor;
 
@@ -300,13 +300,13 @@ namespace TractorNet.Implementation.Factory
                 return actor.OnReceiveAsync(context, token);
             }
 
-            public ValueTask DisposeAsync()
+            public void Dispose()
             {
-                return actor.TryDisposeAsync();
+                actor.TryDispose();
             }
         }
 
-        private class ActorDecoratorTypedWrapper : IActorDecorator, IAsyncDisposable
+        private class ActorDecoratorTypedWrapper : IActorDecorator, IDisposable
         {
             private readonly IActorDecorator actorDecorator;
 
@@ -325,9 +325,9 @@ namespace TractorNet.Implementation.Factory
                 return actorDecorator.OnReceiveAsync(context, token);
             }
 
-            public ValueTask DisposeAsync()
+            public void Dispose()
             {
-                return actorDecorator.TryDisposeAsync();
+                actorDecorator.TryDispose();
             }
         }
 

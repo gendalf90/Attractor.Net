@@ -245,6 +245,11 @@ namespace TractorNet.Implementation.Message
             {
                 lock (sync)
                 {
+                    if (!isProcessing)
+                    {
+                        return;
+                    }
+
                     isProcessing = false;
 
                     messageEventsChannel.Writer.TryWrite(this);

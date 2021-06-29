@@ -8,7 +8,7 @@ namespace TractorNet.Implementation.Executor
 
         public TimeSpan? ExecutionTimeout { get; set; }
 
-        public int? MessageProcessedLimit { get; set; }
+        public int? RunCountLimit { get; set; }
 
         public TimeSpan? MessageReceivingTimeout { get; set; }
     }

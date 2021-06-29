@@ -6,7 +6,7 @@ namespace TractorNet
     {
         void UseExecutionTimeout(TimeSpan time);
 
-        void UseProcessedMessagesLimit(int limit);
+        void UseRunCountLimit(int limit);
 
         void UseBufferSize(int size);
 

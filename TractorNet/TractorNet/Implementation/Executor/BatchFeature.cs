@@ -6,7 +6,7 @@ namespace TractorNet.Implementation.Executor
     {
         private readonly IOptions<BatchReceivingSettings> options;
 
-        private int processedMessagesCount;
+        private int runCount;
         private bool isStopped;
 
         public BatchFeature(IOptions<BatchReceivingSettings> options)
@@ -19,14 +19,14 @@ namespace TractorNet.Implementation.Executor
             isStopped = true;
         }
 
-        public void OnMessageProcessed()
+        public void AfterRun()
         {
-            processedMessagesCount++;
+            runCount++;
         }
 
         public bool IsStopped()
         {
-            return isStopped || processedMessagesCount == options.Value.MessageProcessedLimit;
+            return isStopped || runCount == options.Value.RunCountLimit;
         }
     }
 }

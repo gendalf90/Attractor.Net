@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Threading;
 
 namespace TractorNet.Implementation.Factory
 {
@@ -15,7 +16,7 @@ namespace TractorNet.Implementation.Factory
         public static Type Create()
         {
             return actorModuleBuilder
-                .DefineType($"ActorTypeKey_<{++actorTypeKeyNumber}>")
+                .DefineType($"ActorTypeKey_<{Interlocked.Increment(ref actorTypeKeyNumber)}>")
                 .CreateType();
         }
     }

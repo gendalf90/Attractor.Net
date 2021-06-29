@@ -71,43 +71,41 @@ namespace TractorNet.Implementation.Executor
                 channel.Writer.TryWrite(message);
                 actorChannels.TryAdd(message, channel);
                 disposable.Add(actorCreator);
+                disposable.Add(new StrategyDisposable(async () =>
+                {
+                    channel.Writer.Complete();
+
+                    while (channel.Reader.TryRead(out var message))
+                    {
+                        await message.DisposeAsync();
+                    }
+
+                    actorChannels.TryRemove(message, out _);
+                }));
 
                 _ = Task.Run(async () =>
                 {
                     await using (disposable)
                     await using (WithTtl(token, out var ttlToken))
                     {
-                        try
-                        {
-                            var actor = actorCreator.Create();
+                        var actor = actorCreator.Create();
 
-                            do
+                        do
+                        {
+                            await using (WithTimeout(ttlToken, out var timeoutToken))
+                            await using (var message = await channel.Reader.ReadAsync(timeoutToken))
                             {
-                                await using (WithTimeout(ttlToken, out var timeoutToken))
-                                await using (var message = await channel.Reader.ReadAsync(timeoutToken))
+                                message.SetFeature<IBatchFeature>(feature);
+
+                                var context = new ReceivedMessageContext
                                 {
-                                    message.SetFeature<IBatchFeature>(feature);
+                                    Metadata = message
+                                };
 
-                                    await actor.OnReceiveAsync(new ReceivedMessageContext
-                                    {
-                                        Metadata = message
-                                    }, ttlToken);
-
-                                    feature.OnMessageProcessed();
-                                }
-                            }
-                            while (!feature.IsStopped());
-                        }
-                        finally
-                        {
-                            actorChannels.TryRemove(message, out var removedChannel);
-                            removedChannel.Writer.Complete();
-
-                            await foreach (var message in removedChannel.Reader.ReadAllAsync())
-                            {
-                                await message.DisposeAsync();
+                                await Task.Run(async () => await actor.OnReceiveAsync(context, ttlToken)).ContinueWith(_ => feature.AfterRun());
                             }
                         }
+                        while (!feature.IsStopped());
                     }
                 });
 
