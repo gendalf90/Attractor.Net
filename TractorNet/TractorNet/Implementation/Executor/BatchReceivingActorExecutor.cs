@@ -55,14 +55,14 @@ namespace TractorNet.Implementation.Executor
                     return false;
                 }
 
-                disposable.Add(usePoolResult.Value);
+                disposable.AddFirst(usePoolResult.Value);
 
                 if (await addressBook.TryUseAddressAsync(message, token) is not TrueResult<IAsyncDisposable> useAddressResult)
                 {
                     return false;
                 }
 
-                disposable.Add(useAddressResult.Value);
+                disposable.AddFirst(useAddressResult.Value);
 
                 var actorCreator = actorFactory.UseCreator();
                 var channel = Channel.CreateBounded<IProcessingMessage>(options.Value.MessageBufferSize ?? 1);
@@ -70,8 +70,7 @@ namespace TractorNet.Implementation.Executor
 
                 channel.Writer.TryWrite(message);
                 actorChannels.TryAdd(message, channel);
-                disposable.Add(actorCreator);
-                disposable.Add(new StrategyDisposable(async () =>
+                disposable.AddFirst(new StrategyDisposable(async () =>
                 {
                     channel.Writer.Complete();
 
@@ -79,7 +78,10 @@ namespace TractorNet.Implementation.Executor
                     {
                         await message.DisposeAsync();
                     }
-
+                }));
+                disposable.AddFirst(actorCreator);
+                disposable.AddLast(new StrategyDisposable(() =>
+                {
                     actorChannels.TryRemove(message, out _);
                 }));
 

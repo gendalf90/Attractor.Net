@@ -6,16 +6,21 @@ namespace TractorNet.Implementation.Common
 {
     internal sealed class CompositeDisposable : IAsyncDisposable
     {
-        private readonly List<IAsyncDisposable> disposables = new List<IAsyncDisposable>();
+        private readonly LinkedList<IAsyncDisposable> disposables;
 
         public CompositeDisposable(params IAsyncDisposable[] disposables)
         {
-            this.disposables.AddRange(disposables);
+            this.disposables = new LinkedList<IAsyncDisposable>(disposables);
         }
 
-        public void Add(IAsyncDisposable disposable)
+        public void AddFirst(IAsyncDisposable disposable)
         {
-            disposables.Add(disposable);
+            disposables.AddFirst(disposable);
+        }
+
+        public void AddLast(IAsyncDisposable disposable)
+        {
+            disposables.AddLast(disposable);
         }
 
         public async ValueTask DisposeAsync()

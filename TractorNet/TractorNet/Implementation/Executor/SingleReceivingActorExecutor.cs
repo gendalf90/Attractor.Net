@@ -32,18 +32,18 @@ namespace TractorNet.Implementation.Executor
                     return;
                 }
 
-                disposable.Add(usePoolResult.Value);
+                disposable.AddLast(usePoolResult.Value);
 
                 if (await addressBook.TryUseAddressAsync(message, token) is not TrueResult<IAsyncDisposable> useAddressResult)
                 {
                     return;
                 }
 
-                disposable.Add(useAddressResult.Value);
+                disposable.AddLast(useAddressResult.Value);
 
                 var actorCreator = actorFactory.UseCreator();
 
-                disposable.Add(actorCreator);
+                disposable.AddFirst(actorCreator);
 
                 _ = Task.Run(async () =>
                 {
