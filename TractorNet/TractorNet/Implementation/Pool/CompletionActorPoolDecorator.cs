@@ -37,13 +37,14 @@ namespace TractorNet.Implementation.Pool
                 completionTasks.TryAdd(completionTask.Id, completionTask);
             }
 
-            var placeIsUsed = false;
-
-            try
+            await using (var conditionDisposing = new ConditionDisposable(completionDisposing, true))
             {
                 var result = await pool.TryUsePlaceAsync(token);
 
-                placeIsUsed = result;
+                if (result)
+                {
+                    conditionDisposing.Disable();
+                }
 
                 return result
                     ? new TrueResult<IAsyncDisposable>(new StrategyDisposable(async () =>
@@ -52,13 +53,6 @@ namespace TractorNet.Implementation.Pool
                         await completionDisposing.DisposeAsync();
                     }))
                     : result;
-            }
-            finally
-            {
-                if (!placeIsUsed)
-                {
-                    await completionDisposing.DisposeAsync();
-                }
             }
         }
 

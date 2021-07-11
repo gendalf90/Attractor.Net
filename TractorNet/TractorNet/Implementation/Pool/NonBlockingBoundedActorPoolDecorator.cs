@@ -23,9 +23,12 @@ namespace TractorNet.Implementation.Pool
 
         public override async ValueTask<TryResult<IAsyncDisposable>> TryUsePlaceAsync(CancellationToken token = default)
         {
-            var placeIsUsed = false;
+            var completionDisposing = new StrategyDisposable(() =>
+            {
+                Interlocked.Decrement(ref count);
+            });
 
-            try
+            await using (var conditionDisposing = new ConditionDisposable(completionDisposing, true))
             {
                 if (Interlocked.Increment(ref count) > limit)
                 {
@@ -34,23 +37,18 @@ namespace TractorNet.Implementation.Pool
 
                 var result = await pool.TryUsePlaceAsync(token);
 
-                placeIsUsed = result;
+                if (result)
+                {
+                    conditionDisposing.Disable();
+                }
 
                 return result
                     ? new TrueResult<IAsyncDisposable>(new StrategyDisposable(async () =>
                     {
                         await result.Value.DisposeAsync();
-
-                        Interlocked.Decrement(ref count);
+                        await completionDisposing.DisposeAsync();
                     }))
                     : result;
-            }
-            finally
-            {
-                if (!placeIsUsed)
-                {
-                    Interlocked.Decrement(ref count);
-                }
             }
         }
     }

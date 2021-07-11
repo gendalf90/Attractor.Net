@@ -43,10 +43,9 @@ namespace TractorNet.Implementation.Executor
 
         private async ValueTask<bool> TryStartActorAsync(IProcessingMessage message, CancellationToken token)
         {
-            var isActorStarted = false;
-            var disposable = new CompositeDisposable();
+            var compositeDisposing = new CompositeDisposable();
 
-            try
+            await using (var conditionDisposing = new ConditionDisposable(compositeDisposing, true))
             {
                 var actorPool = actorFactory.CreatePool();
 
@@ -55,14 +54,14 @@ namespace TractorNet.Implementation.Executor
                     return false;
                 }
 
-                disposable.AddFirst(usePoolResult.Value);
+                compositeDisposing.AddFirst(usePoolResult.Value);
 
                 if (await addressBook.TryUseAddressAsync(message, token) is not TrueResult<IAsyncDisposable> useAddressResult)
                 {
                     return false;
                 }
 
-                disposable.AddFirst(useAddressResult.Value);
+                compositeDisposing.AddFirst(useAddressResult.Value);
 
                 var actorCreator = actorFactory.UseCreator();
                 var channel = Channel.CreateBounded<IProcessingMessage>(options.Value.MessageBufferSize ?? 1);
@@ -70,7 +69,7 @@ namespace TractorNet.Implementation.Executor
 
                 channel.Writer.TryWrite(message);
                 actorChannels.TryAdd(message, channel);
-                disposable.AddFirst(new StrategyDisposable(async () =>
+                compositeDisposing.AddFirst(new StrategyDisposable(async () =>
                 {
                     channel.Writer.Complete();
 
@@ -79,15 +78,15 @@ namespace TractorNet.Implementation.Executor
                         await message.DisposeAsync();
                     }
                 }));
-                disposable.AddFirst(actorCreator);
-                disposable.AddLast(new StrategyDisposable(() =>
+                compositeDisposing.AddFirst(actorCreator);
+                compositeDisposing.AddLast(new StrategyDisposable(() =>
                 {
                     actorChannels.TryRemove(message, out _);
                 }));
 
                 _ = Task.Run(async () =>
                 {
-                    await using (disposable)
+                    await using (compositeDisposing)
                     await using (WithTtl(token, out var ttlToken))
                     {
                         var actor = actorCreator.Create();
@@ -111,16 +110,9 @@ namespace TractorNet.Implementation.Executor
                     }
                 });
 
-                isActorStarted = true;
+                conditionDisposing.Disable();
 
                 return true;
-            }
-            finally
-            {
-                if (!isActorStarted)
-                {
-                    await disposable.DisposeAsync();
-                }
             }
         }
 

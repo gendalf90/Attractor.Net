@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using TractorNet.Implementation.Common;
 
 namespace TractorNet.Implementation
 {
@@ -49,18 +50,14 @@ namespace TractorNet.Implementation
         {
             await foreach (var message in inbox.ReadMessagesAsync(stoppingToken))
             {
-                try
+                await using (var conditionDisposing = new ConditionDisposable(message, true))
                 {
                     if (await factory.TryCreateByAddressAsync(message, stoppingToken) is TrueResult<IActorExecutor> createExecutorResult)
                     {
+                        conditionDisposing.Disable();
+
                         await createExecutorResult.Value.ExecuteAsync(message, stoppingToken);
                     }
-                }
-                catch
-                {
-                    await message.DisposeAsync();
-
-                    throw;
                 }
             }
         }

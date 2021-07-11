@@ -141,6 +141,8 @@ namespace TractorNet.Tests.UseCases
                         {
                             actorBuilder.UseBatching();
                         }
+
+                        actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("address"));
                     });
                 })
                 .Build();
@@ -150,7 +152,7 @@ namespace TractorNet.Tests.UseCases
 
             var outbox = host.Services.GetRequiredService<IAnonymousOutbox>();
 
-            await outbox.SendMessageAsync(Mock.Of<IAddress>(), Mock.Of<IPayload>());
+            await outbox.SendMessageAsync(TestStringAddress.CreateAddress("address"), Mock.Of<IPayload>());
 
             // Assert
             for (int expectedResult = 1; expectedResult <= 13; expectedResult++)

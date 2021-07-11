@@ -3,11 +3,11 @@ using System.Threading.Tasks;
 
 namespace TractorNet.Implementation.Address
 {
-    internal sealed class MatchAllAddressesPolicy : IAddressPolicy
+    internal sealed class RejectAllAddressesPolicy : IAddressPolicy
     {
         public ValueTask<bool> IsMatchAsync(IAddress address, CancellationToken token = default)
         {
-            return ValueTask.FromResult(true);
+            return ValueTask.FromResult(false);
         }
     }
 }

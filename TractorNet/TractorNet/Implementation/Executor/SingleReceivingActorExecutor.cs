@@ -20,10 +20,9 @@ namespace TractorNet.Implementation.Executor
 
         public async ValueTask ExecuteAsync(IProcessingMessage message, CancellationToken token = default)
         {
-            var isActorStarted = false;
-            var disposable = new CompositeDisposable(message);
-            
-            try
+            var compositeDisposing = new CompositeDisposable(message);
+
+            await using (var conditionDisposing = new ConditionDisposable(compositeDisposing, true))
             {
                 var actorPool = actorFactory.CreatePool();
 
@@ -32,22 +31,22 @@ namespace TractorNet.Implementation.Executor
                     return;
                 }
 
-                disposable.AddLast(usePoolResult.Value);
+                compositeDisposing.AddLast(usePoolResult.Value);
 
                 if (await addressBook.TryUseAddressAsync(message, token) is not TrueResult<IAsyncDisposable> useAddressResult)
                 {
                     return;
                 }
 
-                disposable.AddLast(useAddressResult.Value);
+                compositeDisposing.AddLast(useAddressResult.Value);
 
                 var actorCreator = actorFactory.UseCreator();
 
-                disposable.AddFirst(actorCreator);
+                compositeDisposing.AddFirst(actorCreator);
 
                 _ = Task.Run(async () =>
                 {
-                    await using (disposable)
+                    await using (compositeDisposing)
                     {
                         await actorCreator
                             .Create()
@@ -58,14 +57,7 @@ namespace TractorNet.Implementation.Executor
                     }
                 });
 
-                isActorStarted = true;
-            }
-            finally
-            {
-                if (!isActorStarted)
-                {
-                    await disposable.DisposeAsync();
-                }
+                conditionDisposing.Disable();
             }
         }
     }

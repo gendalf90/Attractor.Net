@@ -41,7 +41,7 @@ namespace TractorNet.Implementation.Factory
             services.AddSingleton<MemoryMailbox>();
             services.TryAddSingleton<IInbox>(provider => provider.GetRequiredService<MemoryMailbox>());
             services.TryAddSingleton<IAnonymousOutbox>(provider => provider.GetRequiredService<MemoryMailbox>());
-            services.AddSingleton<IAddressPolicy, MatchAllAddressesPolicy>();
+            services.AddSingleton<IAddressPolicy, RejectAllAddressesPolicy>();
             services.AddSingleton<IActorExecutorFactory, ActorExecutorFactory>();
 
             services.AddSingleton(provider =>

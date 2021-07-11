@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
+using TractorNet.Implementation.Common;
 
 namespace TractorNet.Implementation.Pool
 {
@@ -20,32 +21,28 @@ namespace TractorNet.Implementation.Pool
 
         public override async ValueTask<TryResult<IAsyncDisposable>> TryUsePlaceAsync(CancellationToken token = default)
         {
-            var placeIsUsed = false;
-
             if (Interlocked.CompareExchange(ref currentState, Closed, Opened) == Closed)
             {
                 return new FalseResult<IAsyncDisposable>();
             }
 
-            try
+            var completionDisposing = new StrategyDisposable(() =>
+            {
+                Interlocked.Exchange(ref currentState, Opened);
+            });
+
+            await using (var conditionDisposing = new ConditionDisposable(completionDisposing, true))
             {
                 var result = await pool.TryUsePlaceAsync(token);
 
-                placeIsUsed = result;
-
                 if (result)
                 {
+                    conditionDisposing.Disable();
+
                     _ = Task.Delay(period, token).ContinueWith(_ => Interlocked.Exchange(ref currentState, Opened));
                 }
 
                 return result;
-            }
-            finally
-            {
-                if (!placeIsUsed)
-                {
-                    Interlocked.Exchange(ref currentState, Opened);
-                }
             }
         }
     }
