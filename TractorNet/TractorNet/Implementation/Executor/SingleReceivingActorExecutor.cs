@@ -18,9 +18,9 @@ namespace TractorNet.Implementation.Executor
             this.actorFactory = actorFactory;
         }
 
-        public async ValueTask ExecuteAsync(IProcessingMessage message, CancellationToken token = default)
+        public async ValueTask<bool> TryExecuteAsync(IProcessingMessage message, CancellationToken token = default)
         {
-            var compositeDisposing = new CompositeDisposable(message);
+            var compositeDisposing = new CompositeDisposable();
 
             await using (var conditionDisposing = new ConditionDisposable(compositeDisposing, true))
             {
@@ -28,14 +28,14 @@ namespace TractorNet.Implementation.Executor
 
                 if (await actorPool.TryUsePlaceAsync(token) is not TrueResult<IAsyncDisposable> usePoolResult)
                 {
-                    return;
+                    return false;
                 }
 
                 compositeDisposing.AddLast(usePoolResult.Value);
 
                 if (await addressBook.TryUseAddressAsync(message, token) is not TrueResult<IAsyncDisposable> useAddressResult)
                 {
-                    return;
+                    return false;
                 }
 
                 compositeDisposing.AddLast(useAddressResult.Value);
@@ -43,6 +43,7 @@ namespace TractorNet.Implementation.Executor
                 var actorCreator = actorFactory.UseCreator();
 
                 compositeDisposing.AddFirst(actorCreator);
+                compositeDisposing.AddLast(message);
 
                 _ = Task.Run(async () =>
                 {
@@ -58,6 +59,8 @@ namespace TractorNet.Implementation.Executor
                 });
 
                 conditionDisposing.Disable();
+
+                return true;
             }
         }
     }

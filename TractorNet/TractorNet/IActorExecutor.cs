@@ -5,6 +5,6 @@ namespace TractorNet
 {
     public interface IActorExecutor
     {
-        ValueTask ExecuteAsync(IProcessingMessage message, CancellationToken token = default);
+        ValueTask<bool> TryExecuteAsync(IProcessingMessage message, CancellationToken token = default);
     }
 }

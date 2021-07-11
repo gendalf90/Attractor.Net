@@ -54,9 +54,10 @@ namespace TractorNet.Implementation
                 {
                     if (await factory.TryCreateByAddressAsync(message, stoppingToken) is TrueResult<IActorExecutor> createExecutorResult)
                     {
-                        conditionDisposing.Disable();
-
-                        await createExecutorResult.Value.ExecuteAsync(message, stoppingToken);
+                        if (await createExecutorResult.Value.TryExecuteAsync(message, stoppingToken))
+                        {
+                            conditionDisposing.Disable();
+                        }
                     }
                 }
             }

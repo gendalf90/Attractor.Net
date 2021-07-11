@@ -340,9 +340,9 @@ namespace TractorNet.Implementation.Factory
                 this.actorExecutor = actorExecutor;
             }
 
-            public ValueTask ExecuteAsync(IProcessingMessage message, CancellationToken token = default)
+            public ValueTask<bool> TryExecuteAsync(IProcessingMessage message, CancellationToken token = default)
             {
-                return actorExecutor.ExecuteAsync(message, token);
+                return actorExecutor.TryExecuteAsync(message, token);
             }
         }
 

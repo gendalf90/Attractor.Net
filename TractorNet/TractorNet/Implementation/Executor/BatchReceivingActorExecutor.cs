@@ -26,19 +26,14 @@ namespace TractorNet.Implementation.Executor
             this.options = options;
         }
 
-        public async ValueTask ExecuteAsync(IProcessingMessage message, CancellationToken token = default)
+        public async ValueTask<bool> TryExecuteAsync(IProcessingMessage message, CancellationToken token = default)
         {
-            var hasChannel = actorChannels.TryGetValue(message, out var channel);
-
-            if (hasChannel && channel.Writer.TryWrite(message))
+            if (actorChannels.TryGetValue(message, out var channel))
             {
-                return;
+                return channel.Writer.TryWrite(message);
             }
 
-            if (hasChannel || !await TryStartActorAsync(message, token))
-            {
-                await message.DisposeAsync();
-            }
+            return await TryStartActorAsync(message, token);
         }
 
         private async ValueTask<bool> TryStartActorAsync(IProcessingMessage message, CancellationToken token)
@@ -54,22 +49,24 @@ namespace TractorNet.Implementation.Executor
                     return false;
                 }
 
-                compositeDisposing.AddFirst(usePoolResult.Value);
+                compositeDisposing.AddLast(usePoolResult.Value);
 
                 if (await addressBook.TryUseAddressAsync(message, token) is not TrueResult<IAsyncDisposable> useAddressResult)
                 {
                     return false;
                 }
 
-                compositeDisposing.AddFirst(useAddressResult.Value);
+                compositeDisposing.AddLast(useAddressResult.Value);
 
                 var actorCreator = actorFactory.UseCreator();
-                var channel = Channel.CreateBounded<IProcessingMessage>(options.Value.MessageBufferSize ?? 1);
-                var feature = new BatchFeature(options);
 
+                compositeDisposing.AddFirst(actorCreator);
+
+                var channel = Channel.CreateBounded<IProcessingMessage>(options.Value.MessageBufferSize ?? 1);
+                
                 channel.Writer.TryWrite(message);
                 actorChannels.TryAdd(message, channel);
-                compositeDisposing.AddFirst(new StrategyDisposable(async () =>
+                compositeDisposing.AddLast(new StrategyDisposable(async () =>
                 {
                     channel.Writer.Complete();
 
@@ -77,12 +74,11 @@ namespace TractorNet.Implementation.Executor
                     {
                         await message.DisposeAsync();
                     }
-                }));
-                compositeDisposing.AddFirst(actorCreator);
-                compositeDisposing.AddLast(new StrategyDisposable(() =>
-                {
+
                     actorChannels.TryRemove(message, out _);
                 }));
+
+                var feature = new BatchFeature(options);
 
                 _ = Task.Run(async () =>
                 {
