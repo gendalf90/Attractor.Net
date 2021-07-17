@@ -20,7 +20,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         var sender = context.Metadata.GetFeature<ISenderFeature>();
@@ -69,7 +69,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         var sender = context.Metadata.GetFeature<ISenderFeature>();

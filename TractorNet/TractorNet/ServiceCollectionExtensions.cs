@@ -11,7 +11,7 @@ namespace TractorNet
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddTractor(this IServiceCollection services, Action<ITractorBuilder> configuration = null)
+        public static IServiceCollection AddTractorServer(this IServiceCollection services, Action<ITractorBuilder> configuration = null)
         {
             if (services == null)
             {

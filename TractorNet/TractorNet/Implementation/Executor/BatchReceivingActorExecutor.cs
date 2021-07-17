@@ -10,6 +10,8 @@ namespace TractorNet.Implementation.Executor
 {
     internal sealed class BatchReceivingActorExecutor : IActorExecutor
     {
+        private static readonly int DefaultBufferSize = 1;
+
         private readonly ConcurrentDictionary<IAddress, Channel<IProcessingMessage>> actorChannels = new ConcurrentDictionary<IAddress, Channel<IProcessingMessage>>(new AddressEqualityComparer());
 
         private readonly IActorFactory actorFactory;
@@ -62,7 +64,7 @@ namespace TractorNet.Implementation.Executor
 
                 compositeDisposing.AddFirst(actorCreator);
 
-                var channel = Channel.CreateBounded<IProcessingMessage>(options.Value.MessageBufferSize ?? 1);
+                var channel = Channel.CreateBounded<IProcessingMessage>(options.Value.MessageBufferSize ?? DefaultBufferSize);
                 
                 channel.Writer.TryWrite(message);
                 actorChannels.TryAdd(message, channel);
@@ -99,7 +101,9 @@ namespace TractorNet.Implementation.Executor
                                     Metadata = message
                                 };
 
-                                await Task.Run(async () => await actor.OnReceiveAsync(context, ttlToken)).ContinueWith(_ => feature.AfterRun());
+                                await actor.OnReceiveAsync(context, ttlToken);
+
+                                feature.AfterRun();
                             }
                         }
                         while (!feature.IsStopped());

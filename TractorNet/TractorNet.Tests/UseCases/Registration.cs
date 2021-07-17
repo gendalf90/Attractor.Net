@@ -25,7 +25,7 @@ namespace TractorNet.Tests.UseCases
 
                     // register tractor services
                     // in memory mailbox and address book are used by default
-                    services.AddTractor();
+                    services.AddTractorServer();
 
                     // register the actor with scoped lifetime (will be created for each message)
                     services.RegisterActor<TestActor>(actorBuilder =>

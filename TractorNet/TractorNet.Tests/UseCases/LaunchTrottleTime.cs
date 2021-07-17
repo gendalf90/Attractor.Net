@@ -31,7 +31,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractorServer(tractorBuilder =>
                     {
                         tractorBuilder.UseLaunchTrottleTime(trottleTime);
                     });
@@ -80,7 +80,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseLaunchTrottleTime(trottleTime);
@@ -116,7 +116,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseLaunchTrottleTime(trottleTime);
@@ -151,7 +151,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseLaunchTrottleTime(trottleTime);

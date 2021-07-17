@@ -22,7 +22,7 @@ namespace TractorNet.Tests.UseCases
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton(resultsChannel);
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor<CustomerActor>(actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("actors/customer/"));
@@ -35,21 +35,25 @@ namespace TractorNet.Tests.UseCases
 
             var outbox = host.Services.GetRequiredService<IAnonymousOutbox>();
 
+            // messages for actors of the same type will be processed in parallel
             await outbox.SendMessageAsync(TestStringAddress.CreateAddress("actors/customer/1"), Mock.Of<IPayload>());
             await outbox.SendMessageAsync(TestStringAddress.CreateAddress("actors/customer/2"), Mock.Of<IPayload>());
+
+            // but messages with the same address will be processed consistently
+            await outbox.SendMessageAsync(TestStringAddress.CreateAddress("actors/customer/3"), Mock.Of<IPayload>());
             await outbox.SendMessageAsync(TestStringAddress.CreateAddress("actors/customer/3"), Mock.Of<IPayload>());
 
             // Assert
             var ids = new List<string>();
 
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 4; i++)
             {
                 ids.Add(await resultsChannel.Reader.ReadAsync());
             }
 
             Assert.Contains("1", ids);
             Assert.Contains("2", ids);
-            Assert.Contains("3", ids);
+            Assert.Equal(2, ids.Count(id => id == "3"));
 
             await host.StopAsync();
         }

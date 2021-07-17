@@ -27,7 +27,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor(tractorBuilder =>
+                    services.AddTractorServer(tractorBuilder =>
                     {
                         // unbounded by default
                         tractorBuilder.UseRunningNumberLimit(RunningLimit);
@@ -74,7 +74,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         // unbounded by default
@@ -108,7 +108,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         // unbounded by default

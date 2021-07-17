@@ -40,7 +40,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(_ => new BatchActor(async (context, id, token) =>
                     {
                         // token is also in cancelled state after timeout is happened
@@ -103,7 +103,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(_ => new BatchActor(async (context, id, token) =>
                     {
                         var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();
@@ -162,7 +162,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(_ => new BatchActor(async (context, id, token) =>
                     {
                         var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();
@@ -219,7 +219,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(_ => new BatchActor(async (context, id, token) =>
                     {
                         var messageFeature = context.Metadata.GetFeature<IReceivedMessageFeature>();

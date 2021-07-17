@@ -99,7 +99,7 @@ namespace TractorNet.Tests.UseCases
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton(completionResultsChannel);
-                    services.AddTractor();
+                    services.AddTractorServer();
 
                     // common decorators that are applied to each actor
                     services.UseDecorator<FirstCommonActorDecorator>();

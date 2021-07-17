@@ -21,7 +21,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();
@@ -74,7 +74,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();
@@ -124,7 +124,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();
@@ -175,7 +175,7 @@ namespace TractorNet.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractor();
+                    services.AddTractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();
