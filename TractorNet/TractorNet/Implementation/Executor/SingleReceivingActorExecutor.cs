@@ -9,13 +9,16 @@ namespace TractorNet.Implementation.Executor
     {
         private readonly IAddressBook addressBook;
         private readonly IActorFactory actorFactory;
+        private readonly IStateStorage stateStorage;
 
         public SingleReceivingActorExecutor(
             IActorFactory actorFactory,
-            IAddressBook addressBook)
+            IAddressBook addressBook,
+            IStateStorage stateStorage)
         {
             this.addressBook = addressBook;
             this.actorFactory = actorFactory;
+            this.stateStorage = stateStorage;
         }
 
         public async ValueTask<bool> TryExecuteAsync(IProcessingMessage message, CancellationToken token = default)
@@ -49,6 +52,7 @@ namespace TractorNet.Implementation.Executor
                 {
                     await using (compositeDisposing)
                     {
+                        await stateStorage.LoadStateAsync(message, token);
                         await actorCreator
                             .Create()
                             .OnReceiveAsync(new ReceivedMessageContext

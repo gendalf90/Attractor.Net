@@ -44,29 +44,34 @@ namespace TractorNet.Implementation.Message
 
         public ValueTask SendMessageAsync(IAddress address, IPayload payload, SendingMetadata metadata = null, CancellationToken token = default)
         {
-            var result = new ProcessingMessage(
-                messageEventsChannel,
-                message =>
-                {
-                    message.SetFeature<IReceivedMessageFeature>(new ReceivedMessageFeature(address, payload, message));
-                    message.SetFeature<ISelfFeature>(new SelfFeature(address, this));
-                },
-                address);
-
-            InitializeMessage(result, metadata);
-
-            return ValueTask.CompletedTask;
+            return SendMessageAsync(address, payload, null, metadata, token);
         }
 
-        private ValueTask SendMessageAsync(IAddress from, IAddress to, IPayload payload, SendingMetadata metadata = null, CancellationToken token = default)
+        private ValueTask SendMessageAsync(IAddress to, IPayload payload, IAddress from = null, SendingMetadata metadata = null, CancellationToken token = default)
         {
+            if (to == null)
+            {
+                throw new ArgumentNullException(nameof(to));
+            }
+
+            if (payload == null)
+            {
+                throw new ArgumentNullException(nameof(payload));
+            }
+
+            token.ThrowIfCancellationRequested();
+
             var result = new ProcessingMessage(
                 messageEventsChannel,
                 message =>
                 {
                     message.SetFeature<IReceivedMessageFeature>(new ReceivedMessageFeature(to, payload, message));
                     message.SetFeature<ISelfFeature>(new SelfFeature(to, this));
-                    message.SetFeature<ISenderFeature>(new SenderFeature(from, to, this));
+
+                    if (from != null)
+                    {
+                        message.SetFeature<ISenderFeature>(new SenderFeature(from, to, this));
+                    }
                 },
                 to);
 
@@ -155,7 +160,7 @@ namespace TractorNet.Implementation.Message
 
             public ValueTask SendMessageAsync(IAddress address, IPayload payload, SendingMetadata metadata = null, CancellationToken token = default)
             {
-                return mailbox.SendMessageAsync(current, address, payload, metadata, token);
+                return mailbox.SendMessageAsync(address, payload, current, metadata, token);
             }
 
             public ValueTask SendMessageAsync(IPayload payload, SendingMetadata metadata = null, CancellationToken token = default)
@@ -184,7 +189,7 @@ namespace TractorNet.Implementation.Message
 
             public ValueTask SendMessageAsync(IPayload payload, SendingMetadata metadata = null, CancellationToken token = default)
             {
-                return mailbox.SendMessageAsync(current, sender, payload, metadata, token);
+                return mailbox.SendMessageAsync(sender, payload, current, metadata, token);
             }
         }
 

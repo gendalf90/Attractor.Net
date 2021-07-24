@@ -182,13 +182,15 @@ namespace TractorNet.Implementation.Factory
                     result = new BatchReceivingActorExecutor(
                         provider.GetRequiredService<ActorFactory>(),
                         provider.GetRequiredService<IAddressBook>(),
+                        provider.GetRequiredService<IStateStorage>(),
                         Options.Create(batchReceivingSettings));
                 }
                 else
                 {
                     result = new SingleReceivingActorExecutor(
                         provider.GetRequiredService<ActorFactory>(),
-                        provider.GetRequiredService<IAddressBook>());
+                        provider.GetRequiredService<IAddressBook>(),
+                        provider.GetRequiredService<IStateStorage>());
                 }
 
                 return new ActorExecutorTypedWrapper(result);

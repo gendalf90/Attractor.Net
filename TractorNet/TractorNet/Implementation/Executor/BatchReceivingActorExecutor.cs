@@ -16,15 +16,18 @@ namespace TractorNet.Implementation.Executor
 
         private readonly IActorFactory actorFactory;
         private readonly IAddressBook addressBook;
+        private readonly IStateStorage stateStorage;
         private readonly IOptions<BatchReceivingSettings> options;
 
         public BatchReceivingActorExecutor(
             IActorFactory actorFactory,
             IAddressBook addressBook,
+            IStateStorage stateStorage,
             IOptions<BatchReceivingSettings> options)
         {
             this.actorFactory = actorFactory;
             this.addressBook = addressBook;
+            this.stateStorage = stateStorage;
             this.options = options;
         }
 
@@ -94,6 +97,8 @@ namespace TractorNet.Implementation.Executor
                             await using (WithTimeout(ttlToken, out var timeoutToken))
                             await using (var message = await channel.Reader.ReadAsync(timeoutToken))
                             {
+                                await stateStorage.LoadStateAsync(message, ttlToken);
+
                                 message.SetFeature<IBatchFeature>(feature);
 
                                 var context = new ReceivedMessageContext

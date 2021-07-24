@@ -4,6 +4,7 @@ using System;
 using TractorNet.Implementation.Address;
 using TractorNet.Implementation.Message;
 using TractorNet.Implementation.Pool;
+using TractorNet.Implementation.State;
 
 namespace TractorNet.Implementation.Factory
 {
@@ -38,6 +39,7 @@ namespace TractorNet.Implementation.Factory
         {
             services.AddHostedService<MessageProcessor>();
             services.TryAddSingleton<IAddressBook, MemoryAddressBook>();
+            services.TryAddSingleton<IStateStorage, MemoryStateStorage>();
             services.AddSingleton<MemoryMailbox>();
             services.TryAddSingleton<IInbox>(provider => provider.GetRequiredService<MemoryMailbox>());
             services.TryAddSingleton<IAnonymousOutbox>(provider => provider.GetRequiredService<MemoryMailbox>());

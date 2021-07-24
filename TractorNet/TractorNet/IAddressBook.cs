@@ -6,6 +6,6 @@ namespace TractorNet
 {
     public interface IAddressBook
     {
-        ValueTask<TryResult<IAsyncDisposable>> TryUseAddressAsync(IAddress address, CancellationToken token = default);
+        ValueTask<TryResult<IAsyncDisposable>> TryUseAddressAsync(IProcessingMessage message, CancellationToken token = default);
     }
 }

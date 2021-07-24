@@ -10,13 +10,18 @@ namespace TractorNet.Implementation.Address
     {
         private readonly ConcurrentDictionary<IAddress, MemoryAddressReservation> reservations = new ConcurrentDictionary<IAddress, MemoryAddressReservation>(new AddressEqualityComparer());
 
-        public ValueTask<TryResult<IAsyncDisposable>> TryUseAddressAsync(IAddress address, CancellationToken token = default)
+        public ValueTask<TryResult<IAsyncDisposable>> TryUseAddressAsync(IProcessingMessage message, CancellationToken token = default)
         {
+            if (message == null)
+            {
+                throw new ArgumentNullException(nameof(message));
+            }
+
             token.ThrowIfCancellationRequested();
 
-            var reservation = new MemoryAddressReservation(address, this);
+            var reservation = new MemoryAddressReservation(message, this);
 
-            return reservations.TryAdd(address, reservation) 
+            return reservations.TryAdd(message, reservation) 
                 ? ValueTask.FromResult<TryResult<IAsyncDisposable>>(new TrueResult<IAsyncDisposable>(reservation))
                 : ValueTask.FromResult<TryResult<IAsyncDisposable>>(new FalseResult<IAsyncDisposable>());
         }
