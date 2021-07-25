@@ -1,5 +1,7 @@
 # Attractor.Net [![NuGet](https://img.shields.io/nuget/v/Attractor.svg)](https://www.nuget.org/packages/Attractor/)
 
+![Attractor logo](docs/logo.png)
+
 Actor model system implementation on .NET
 
 ### Getting started
