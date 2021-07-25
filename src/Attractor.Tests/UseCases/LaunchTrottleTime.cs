@@ -31,7 +31,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer(tractorBuilder =>
+                    services.AddAttractorServer(tractorBuilder =>
                     {
                         tractorBuilder.UseLaunchTrottleTime(trottleTime);
                     });
@@ -80,7 +80,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseLaunchTrottleTime(trottleTime);
@@ -116,7 +116,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseLaunchTrottleTime(trottleTime);
@@ -151,7 +151,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseLaunchTrottleTime(trottleTime);

@@ -27,7 +27,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer(tractorBuilder =>
+                    services.AddAttractorServer(tractorBuilder =>
                     {
                         // unbounded by default
                         tractorBuilder.UseRunningNumberLimit(RunningLimit);
@@ -74,7 +74,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         // unbounded by default
@@ -108,7 +108,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         // unbounded by default

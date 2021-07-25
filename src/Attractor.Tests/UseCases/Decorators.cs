@@ -99,7 +99,7 @@ namespace Attractor.Tests.UseCases
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton(completionResultsChannel);
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
 
                     // common decorators that are applied to each actor
                     services.UseDecorator<FirstCommonActorDecorator>();

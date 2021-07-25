@@ -38,7 +38,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
@@ -72,7 +72,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
@@ -109,7 +109,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         await resultsChannel.Writer.WriteAsync(DateTime.UtcNow);
@@ -153,7 +153,7 @@ namespace Attractor.Tests.UseCases
             using var host = new HostBuilder()
                 .ConfigureServices(services =>
                 {
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor(async (context, token) =>
                     {
                         var feature = context.Metadata.GetFeature<IReceivedMessageFeature>();

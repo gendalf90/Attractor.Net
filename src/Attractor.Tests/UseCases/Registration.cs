@@ -25,7 +25,7 @@ namespace Attractor.Tests.UseCases
 
                     // register attractor services
                     // in memory mailbox and address book are used by default
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
 
                     // register the actor with scoped lifetime (will be created for each message)
                     services.RegisterActor<TestActor>(actorBuilder =>

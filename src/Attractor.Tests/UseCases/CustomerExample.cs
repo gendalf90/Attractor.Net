@@ -22,7 +22,7 @@ namespace Attractor.Tests.UseCases
                 .ConfigureServices(services =>
                 {
                     services.AddSingleton(resultsChannel);
-                    services.AddTractorServer();
+                    services.AddAttractorServer();
                     services.RegisterActor<CustomerActor>(actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("actors/customer/"));

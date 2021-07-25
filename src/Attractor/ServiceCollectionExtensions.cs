@@ -11,7 +11,7 @@ namespace Attractor
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddTractorServer(this IServiceCollection services, Action<IAttractorBuilder> configuration = null)
+        public static IServiceCollection AddAttractorServer(this IServiceCollection services, Action<IAttractorBuilder> configuration = null)
         {
             if (services == null)
             {
