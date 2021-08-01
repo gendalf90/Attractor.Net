@@ -46,7 +46,7 @@ namespace Attractor.Implementation
             logger.LogTrace("Message processing has stopped");
         }
 
-        private async Task ExecuteInternalAsync(CancellationToken stoppingToken)
+        private async ValueTask ExecuteInternalAsync(CancellationToken stoppingToken)
         {
             await foreach (var message in inbox.ReadMessagesAsync(stoppingToken))
             {
