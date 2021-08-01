@@ -22,24 +22,33 @@ namespace Attractor.Implementation.Message
 
         public async IAsyncEnumerable<IProcessingMessage> ReadMessagesAsync([EnumeratorCancellation] CancellationToken token = default)
         {
-            await foreach (var message in messageEventsChannel.Reader.ReadAllAsync(token))
+            while (true)
             {
-                token.ThrowIfCancellationRequested();
+                var trottleTask = options.Value.ReadTrottleTime.HasValue
+                    ? Task.Delay(options.Value.ReadTrottleTime.Value, token)
+                    : Task.CompletedTask;
 
-                if (!message.TryStartProcessing())
-                {
-                    continue;
-                }
-
-                message.Initialize();
+                var message = await GetNextMessageAsync(token);
+                
+                await trottleTask;
 
                 yield return message;
-                
-                if (options.Value.ReadTrottleTime.HasValue)
-                {
-                    await Task.Delay(options.Value.ReadTrottleTime.Value, token);
-                }
             }
+        }
+
+        private async ValueTask<ProcessingMessage> GetNextMessageAsync(CancellationToken token)
+        {
+            ProcessingMessage message;
+
+            do
+            {
+                message = await messageEventsChannel.Reader.ReadAsync(token);
+            }
+            while (!message.TryStartProcessing());
+
+            message.Initialize();
+
+            return message;
         }
 
         public ValueTask SendMessageAsync(IAddress address, IPayload payload, SendingMetadata metadata = null, CancellationToken token = default)

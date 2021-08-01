@@ -4,9 +4,10 @@
     <TargetFramework>net5.0</TargetFramework>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Authors>Roman Boykov</Authors>
-    <Version>1.0.0-alpha.9</Version>
+    <Version>1.0.0-alpha.10</Version>
     <RepositoryUrl>https://github.com/gendalf90/attractor.net</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/gendalf90/attractor.net</PackageProjectUrl>
   </PropertyGroup>
 
   <ItemGroup>

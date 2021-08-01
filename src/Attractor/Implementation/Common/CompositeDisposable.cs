@@ -8,7 +8,12 @@ namespace Attractor.Implementation.Common
     {
         private readonly LinkedList<IAsyncDisposable> disposables;
 
-        public CompositeDisposable(params IAsyncDisposable[] disposables)
+        public CompositeDisposable()
+        {
+            disposables = new LinkedList<IAsyncDisposable>();
+        }
+
+        public CompositeDisposable(IEnumerable<IAsyncDisposable> disposables)
         {
             this.disposables = new LinkedList<IAsyncDisposable>(disposables);
         }
@@ -29,6 +34,11 @@ namespace Attractor.Implementation.Common
             {
                 await disposable.DisposeAsync();
             }
+        }
+
+        public static CompositeDisposable Create(params IAsyncDisposable[] disposables)
+        {
+            return new CompositeDisposable(disposables);
         }
     }
 }
