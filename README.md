@@ -1,10 +1,14 @@
-# Attractor.Net [![NuGet](https://buildstats.info/nuget/Attractor?packageVersion=1.0.0-alpha.10&includePreReleases=true)](https://www.nuget.org/packages/Attractor/1.0.0-alpha.10) [![NuGet](https://buildstats.info/nuget/Attractor?packageVersion=1.0.0-alpha.10-netstandard2.0&includePreReleases=true)](https://www.nuget.org/packages/Attractor/1.0.0-alpha.10-netstandard2.0)
+# Attractor.Net [![NuGet](https://buildstats.info/nuget/Attractor?packageVersion=1.0.0-alpha.11-net5&includePreReleases=true)](https://www.nuget.org/packages/Attractor/1.0.0-alpha.11-net5) [![NuGet](https://buildstats.info/nuget/Attractor?packageVersion=1.0.0-alpha.11-netstandard2.0&includePreReleases=true)](https://www.nuget.org/packages/Attractor/1.0.0-alpha.11-netstandard2.0)
 
 Actor model system implementation on .NET
 
 ### Getting started
 
 Install from [NuGet](https://www.nuget.org/packages/Attractor/) version you need
+
+### Using
+
+Use cases you can find [here](https://github.com/gendalf90/Attractor.Net/tree/main/src/Attractor.Tests/UseCases)
 
 ### License
 
