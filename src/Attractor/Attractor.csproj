@@ -5,9 +5,10 @@
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <Authors>Roman Boykov</Authors>
     <Version>1.0.0-alpha.12-net5</Version>
-    <RepositoryUrl>https://github.com/gendalf90/attractor.net</RepositoryUrl>
+    <RepositoryUrl>https://github.com/gendalf90/Attractor.Net</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/gendalf90/attractor.net</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/gendalf90/Attractor.Net</PackageProjectUrl>
+    <PackageTags>actors actor model attractor</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
