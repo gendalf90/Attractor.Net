@@ -19,9 +19,7 @@ namespace Attractor.Implementation.State
 
             token.ThrowIfCancellationRequested();
 
-            states.TryGetValue(message, out var currentState);
-
-            message.SetFeature<IStateFeature>(new StateFeature(message, currentState, this));
+            message.SetFeature<IStateFeature>(new StateFeature(message, this));
 
             return ValueTask.CompletedTask;
         }
@@ -29,21 +27,22 @@ namespace Attractor.Implementation.State
         private class StateFeature : IStateFeature
         {
             private readonly IAddress address;
-            private readonly IState state;
             private readonly MemoryStateStorage storage;
 
-            public StateFeature(IAddress address, IState state, MemoryStateStorage storage)
+            public StateFeature(IAddress address, MemoryStateStorage storage)
             {
                 this.address = address;
-                this.state = state;
                 this.storage = storage;
             }
 
             public ReadOnlyMemory<byte> GetBytes()
             {
-                return state == null
-                    ? ReadOnlyMemory<byte>.Empty
-                    : state.GetBytes();
+                if (storage.states.TryGetValue(address, out var state))
+                {
+                    return state.GetBytes();
+                }
+
+                return ReadOnlyMemory<byte>.Empty;
             }
 
             public ValueTask SaveAsync(IState state, CancellationToken token = default)
