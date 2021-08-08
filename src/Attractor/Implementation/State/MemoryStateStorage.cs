@@ -57,6 +57,13 @@ namespace Attractor.Implementation.State
 
                 return ValueTask.CompletedTask;
             }
+
+            public ValueTask ClearAsync(CancellationToken token = default)
+            {
+                storage.states.TryRemove(address, out _);
+
+                return ValueTask.CompletedTask;
+            }
         }
     }
 }
