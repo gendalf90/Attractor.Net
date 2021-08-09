@@ -104,7 +104,7 @@ namespace Attractor.Tests.UseCases
         {
             public ValueTask<bool> IsMatchAsync(IAddress address, CancellationToken token = default)
             {
-                return ValueTask.FromResult(TestStringAddress.ToString(address) == "abc");
+                return new ValueTask<bool>(Task.FromResult(TestStringAddress.ToString(address) == "abc"));
             }
         }
 
@@ -119,7 +119,7 @@ namespace Attractor.Tests.UseCases
 
             public ValueTask<bool> IsMatchAsync(IAddress address, CancellationToken token = default)
             {
-                return ValueTask.FromResult(TestStringAddress.ToString(address) == value);
+                return new ValueTask<bool>(Task.FromResult(TestStringAddress.ToString(address) == value));
             }
         }
     }

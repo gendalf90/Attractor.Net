@@ -22,8 +22,8 @@ namespace Attractor.Implementation.Address
             var reservation = new MemoryAddressReservation(message, this);
 
             return reservations.TryAdd(message, reservation) 
-                ? ValueTask.FromResult<TryResult<IAsyncDisposable>>(new TrueResult<IAsyncDisposable>(reservation))
-                : ValueTask.FromResult<TryResult<IAsyncDisposable>>(new FalseResult<IAsyncDisposable>());
+                ? ValueTaskBuilder.FromResult<TryResult<IAsyncDisposable>>(new TrueResult<IAsyncDisposable>(reservation))
+                : ValueTaskBuilder.FromResult<TryResult<IAsyncDisposable>>(new FalseResult<IAsyncDisposable>());
         }
 
         private class MemoryAddressReservation : IAsyncDisposable
@@ -41,7 +41,7 @@ namespace Attractor.Implementation.Address
             {
                 book.reservations.TryRemove(address, out _);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
         }
     }

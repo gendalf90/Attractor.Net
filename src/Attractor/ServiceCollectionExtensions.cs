@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Attractor.Implementation.Actor;
 using Attractor.Implementation.Factory;
+using Attractor.Implementation.Common;
 
 namespace Attractor
 {
@@ -79,7 +80,7 @@ namespace Attractor
             {
                 strategy(actor, context, token);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             });
         }
 
@@ -116,7 +117,7 @@ namespace Attractor
             {
                 strategy(context, token);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }, configuration);
         }
 

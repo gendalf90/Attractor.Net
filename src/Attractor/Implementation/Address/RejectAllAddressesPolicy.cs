@@ -1,4 +1,5 @@
-﻿using System.Threading;
+﻿using Attractor.Implementation.Common;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Attractor.Implementation.Address
@@ -7,7 +8,7 @@ namespace Attractor.Implementation.Address
     {
         public ValueTask<bool> IsMatchAsync(IAddress address, CancellationToken token = default)
         {
-            return ValueTask.FromResult(false);
+            return ValueTaskBuilder.FromResult(false);
         }
     }
 }

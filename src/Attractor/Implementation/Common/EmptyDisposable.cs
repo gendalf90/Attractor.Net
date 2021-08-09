@@ -7,7 +7,7 @@ namespace Attractor.Implementation.Common
     {
         public ValueTask DisposeAsync()
         {
-            return ValueTask.CompletedTask;
+            return ValueTaskBuilder.CompletedTask;
         }
     }
 }

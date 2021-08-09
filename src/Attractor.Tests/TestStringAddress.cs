@@ -21,7 +21,7 @@ namespace Attractor.Tests
 
         public ValueTask<bool> IsMatchAsync(IAddress address, CancellationToken token = default)
         {
-            return ValueTask.FromResult(ToString(address) == value);
+            return new ValueTask<bool>(Task.FromResult(ToString(address) == value));
         }
 
         public static IAddressPolicy CreatePolicy(string toMatchValue)

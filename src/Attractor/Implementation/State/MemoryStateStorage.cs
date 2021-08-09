@@ -21,7 +21,7 @@ namespace Attractor.Implementation.State
 
             message.SetFeature<IStateFeature>(new StateFeature(message, this));
 
-            return ValueTask.CompletedTask;
+            return ValueTaskBuilder.CompletedTask;
         }
 
         private class StateFeature : IStateFeature
@@ -54,14 +54,14 @@ namespace Attractor.Implementation.State
 
                 storage.states.AddOrUpdate(address, state, (_, _) => state);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
 
             public ValueTask ClearAsync(CancellationToken token = default)
             {
                 storage.states.TryRemove(address, out _);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
         }
     }

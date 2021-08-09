@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Attractor.Implementation.Common;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -17,7 +18,7 @@ namespace Attractor
             {
                 strategy(actor, context, token);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             });
         }
 
@@ -30,7 +31,7 @@ namespace Attractor
 
             builder.UseAddressPolicy((address, token) =>
             {
-                return ValueTask.FromResult(strategy(address, token));
+                return ValueTaskBuilder.FromResult(strategy(address, token));
             });
         }
     }

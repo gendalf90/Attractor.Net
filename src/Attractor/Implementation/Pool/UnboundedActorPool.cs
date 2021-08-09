@@ -9,7 +9,7 @@ namespace Attractor.Implementation.Pool
     {
         public ValueTask<TryResult<IAsyncDisposable>> TryUsePlaceAsync(CancellationToken token = default)
         {
-            return ValueTask.FromResult<TryResult<IAsyncDisposable>>(new TrueResult<IAsyncDisposable>(new EmptyDisposable()));
+            return ValueTaskBuilder.FromResult<TryResult<IAsyncDisposable>>(new TrueResult<IAsyncDisposable>(new EmptyDisposable()));
         }
     }
 }

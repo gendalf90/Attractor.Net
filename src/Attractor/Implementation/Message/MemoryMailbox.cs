@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Options;
+﻿using Attractor.Implementation.Common;
+using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -86,7 +87,7 @@ namespace Attractor.Implementation.Message
 
             InitializeMessage(result, metadata);
 
-            return ValueTask.CompletedTask;
+            return ValueTaskBuilder.CompletedTask;
         }
 
         private void InitializeMessage(ProcessingMessage message, SendingMetadata metadata)
@@ -123,21 +124,21 @@ namespace Attractor.Implementation.Message
             {
                 message.Consume();
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
 
             public ValueTask DelayAsync(TimeSpan time, CancellationToken token = default)
             {
                 message.Delay(time);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
 
             public ValueTask ExpireAsync(TimeSpan time, CancellationToken token = default)
             {
                 message.Expire(time);
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
 
             ReadOnlyMemory<byte> IAddress.GetBytes()
@@ -353,7 +354,7 @@ namespace Attractor.Implementation.Message
             {
                 StopProcessing();
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
 
             ReadOnlyMemory<byte> IAddress.GetBytes()

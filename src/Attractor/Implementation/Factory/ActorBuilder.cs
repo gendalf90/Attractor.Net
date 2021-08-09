@@ -269,7 +269,7 @@ namespace Attractor.Implementation.Factory
             {
                 scope.Dispose();
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             }
         }
 

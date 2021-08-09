@@ -43,7 +43,7 @@ namespace Attractor.Implementation.Pool
                 semaphore.Dispose();
             }
 
-            return ValueTask.CompletedTask;
+            return ValueTaskBuilder.CompletedTask;
         }
     }
 }

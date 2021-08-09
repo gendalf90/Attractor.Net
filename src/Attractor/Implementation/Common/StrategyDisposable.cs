@@ -18,7 +18,7 @@ namespace Attractor.Implementation.Common
             {
                 action();
 
-                return ValueTask.CompletedTask;
+                return ValueTaskBuilder.CompletedTask;
             };
         }
 
