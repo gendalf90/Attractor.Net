@@ -1,4 +1,6 @@
-# Attractor.Net [![NuGet](https://buildstats.info/nuget/Attractor?packageVersion=1.0.0-alpha.12-net5&includePreReleases=true)](https://www.nuget.org/packages/Attractor/1.0.0-alpha.12-net5) [![NuGet](https://buildstats.info/nuget/Attractor?packageVersion=1.0.0-alpha.12-netstandard2.0&includePreReleases=true)](https://www.nuget.org/packages/Attractor/1.0.0-alpha.12-netstandard2.0)
+# Attractor.Net
+
+[![NuGet](https://buildstats.info/nuget/Attractor?packageVersion=1.0.0-alpha.13&includePreReleases=true)](https://www.nuget.org/packages/Attractor/1.0.0-alpha.13)
 
 Actor model system implementation on .NET
 
