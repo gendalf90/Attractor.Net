@@ -23,11 +23,6 @@ namespace Attractor.Tests.UseCases
 
             await Task.Delay(TimeSpan.FromMilliseconds(100));
 
-            await context
-                .Metadata
-                .GetFeature<IReceivedMessageFeature>()
-                .ConsumeAsync();
-
             Interlocked.Decrement(ref currentRunningNumber);
         }
 
@@ -42,6 +37,7 @@ namespace Attractor.Tests.UseCases
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -77,6 +73,7 @@ namespace Attractor.Tests.UseCases
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
                         actorBuilder.UseBatching();
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -113,13 +110,10 @@ namespace Attractor.Tests.UseCases
                     services.RegisterActor(async (context, token) =>
                     {
                         await resultsChannel.Writer.WriteAsync(DateTime.UtcNow);
-                        await context
-                            .Metadata
-                            .GetFeature<IReceivedMessageFeature>()
-                            .ConsumeAsync();
                     }, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("address"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();

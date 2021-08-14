@@ -33,6 +33,9 @@ namespace Attractor.Tests.UseCases
                         // register address policy with singleton lifetime
                         // it is used for matching each message address with concrette actor class
                         actorBuilder.UseAddressPolicy<AbcAddressPolicy>();
+
+                        // auto consume message after processing so you don't need to get the message feature for manual consuming
+                        actorBuilder.UseAutoConsume();
                     });
 
                     services.RegisterActor(provider =>
@@ -41,15 +44,11 @@ namespace Attractor.Tests.UseCases
                     }, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => new StringAddressPolicy("def"));
+                        actorBuilder.UseAutoConsume();
                     });
 
-                    services.RegisterActor(async (context, token) =>
+                    services.RegisterActor((context, token) =>
                     {
-                        await context
-                            .Metadata
-                            .GetFeature<IReceivedMessageFeature>()
-                            .ConsumeAsync();
-
                         completionTrigger.Signal();
                     }, actorBuilder =>
                     {
@@ -58,6 +57,7 @@ namespace Attractor.Tests.UseCases
                         // addresses can be different so if they are matching by policy
                         // different instances of the actor class will be created (for each unique address)
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("ghi"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -89,14 +89,11 @@ namespace Attractor.Tests.UseCases
                 this.completionTrigger = completionTrigger;
             }
 
-            public async ValueTask OnReceiveAsync(ReceivedMessageContext context, CancellationToken token = default)
+            public ValueTask OnReceiveAsync(ReceivedMessageContext context, CancellationToken token = default)
             {
-                await context
-                    .Metadata
-                    .GetFeature<IReceivedMessageFeature>()
-                    .ConsumeAsync();
-
                 completionTrigger.Signal();
+
+                return new ValueTask(Task.CompletedTask);
             }
         }
 

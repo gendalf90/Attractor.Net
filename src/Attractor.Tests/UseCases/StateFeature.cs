@@ -24,7 +24,6 @@ namespace Attractor.Tests.UseCases
                     services.RegisterActor(async (context, token) =>
                     {
                         var state = context.Metadata.GetFeature<IStateFeature>();
-                        var message = context.Metadata.GetFeature<IReceivedMessageFeature>();
                         var currentState = TestStringState.ToString(state);
 
                         await resultsChannel.Writer.WriteAsync(currentState);
@@ -32,10 +31,10 @@ namespace Attractor.Tests.UseCases
                         var newState = currentState + "test";
 
                         await state.SaveAsync(TestStringState.Create(newState));
-                        await message.ConsumeAsync();
                     }, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("address"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -78,7 +77,6 @@ namespace Attractor.Tests.UseCases
                     services.RegisterActor(async (context, token) =>
                     {
                         var state = context.Metadata.GetFeature<IStateFeature>();
-                        var message = context.Metadata.GetFeature<IReceivedMessageFeature>();
 
                         await resultsChannel.Writer.WriteAsync(TestStringState.ToString(state));
 
@@ -92,11 +90,10 @@ namespace Attractor.Tests.UseCases
                         }
 
                         isFirstMessage = false;
-
-                        await message.ConsumeAsync();
                     }, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("address"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();

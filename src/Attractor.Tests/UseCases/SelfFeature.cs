@@ -25,13 +25,12 @@ namespace Attractor.Tests.UseCases
                     services.RegisterActor(async (context, token) =>
                     {
                         var self = context.Metadata.GetFeature<ISelfFeature>();
-                        var message = context.Metadata.GetFeature<IReceivedMessageFeature>();
 
                         await resultsChannel.Writer.WriteAsync(TestStringAddress.ToString(self));
-                        await message.ConsumeAsync();
                     }, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("address"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -84,10 +83,10 @@ namespace Attractor.Tests.UseCases
                         
                         await resultsChannel.Writer.WriteAsync(TestStringAddress.ToString(message));
                         await resultsChannel.Writer.WriteAsync(TestStringPayload.ToString(message));
-                        await message.ConsumeAsync();
                     }, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("address"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -139,10 +138,10 @@ namespace Attractor.Tests.UseCases
 
                         await resultsChannel.Writer.WriteAsync(TestStringAddress.ToString(message));
                         await resultsChannel.Writer.WriteAsync(TestStringPayload.ToString(message));
-                        await message.ConsumeAsync();
                     }, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("address"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();

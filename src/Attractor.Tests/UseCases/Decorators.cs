@@ -86,10 +86,8 @@ namespace Attractor.Tests.UseCases
             }
         }
 
-        [Theory]
-        [InlineData(false)]
-        [InlineData(true)]
-        public async Task Run(bool useBatching)
+        [Fact]
+        public async Task Run()
         {
             // Arrange
             var completionTimeoutSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -116,11 +114,6 @@ namespace Attractor.Tests.UseCases
 
                     services.RegisterActor(async (context, token) =>
                     {
-                        await context
-                            .Metadata
-                            .GetFeature<IReceivedMessageFeature>()
-                            .ConsumeAsync();
-
                         await completionResultsChannel.Writer.WriteAsync(7);
                     }, actorBuilder =>
                     {
@@ -136,11 +129,7 @@ namespace Attractor.Tests.UseCases
                             await actor.OnReceiveAsync(context, token);
                             await completionResultsChannel.Writer.WriteAsync(8);
                         });
-
-                        if (useBatching)
-                        {
-                            actorBuilder.UseBatching();
-                        }
+                        actorBuilder.UseAutoConsume();
 
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("address"));
                     });

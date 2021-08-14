@@ -14,14 +14,11 @@ namespace Attractor.Tests.UseCases
 
         private int launches = 0;
 
-        private async ValueTask OnReceiveAsync(ReceivedMessageContext context, CancellationToken token)
+        private ValueTask OnReceiveAsync(ReceivedMessageContext context, CancellationToken token)
         {
             Interlocked.Increment(ref launches);
 
-            await context
-                .Metadata
-                .GetFeature<IReceivedMessageFeature>()
-                .ConsumeAsync();
+            return new ValueTask(Task.CompletedTask);
         }
 
         [Fact]
@@ -39,16 +36,19 @@ namespace Attractor.Tests.UseCases
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("123"));
+                        actorBuilder.UseAutoConsume();
                     });
 
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("456"));
+                        actorBuilder.UseAutoConsume();
                     });
 
                     services.RegisterActor(OnReceiveAsync, actorBuilder =>
                     {
                         actorBuilder.UseAddressPolicy(_ => TestStringAddress.CreatePolicy("789"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -85,6 +85,7 @@ namespace Attractor.Tests.UseCases
                     {
                         actorBuilder.UseLaunchTrottleTime(trottleTime);
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -122,6 +123,7 @@ namespace Attractor.Tests.UseCases
                         actorBuilder.UseLaunchTrottleTime(trottleTime);
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
                         actorBuilder.UseBatching();
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();
@@ -157,6 +159,7 @@ namespace Attractor.Tests.UseCases
                         actorBuilder.UseLaunchTrottleTime(trottleTime);
                         actorBuilder.UseAddressPolicy((address, token) => TestStringAddress.ToString(address).StartsWith("123"));
                         actorBuilder.UseBatching();
+                        actorBuilder.UseAutoConsume();
                     });
                 })
                 .Build();

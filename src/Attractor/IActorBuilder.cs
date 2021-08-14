@@ -25,5 +25,7 @@ namespace Attractor
         void UseAddressPolicy(Func<IServiceProvider, IAddressPolicy> factory);
 
         void UseAddressPolicy(Func<IAddress, CancellationToken, ValueTask<bool>> strategy);
+
+        void UseAutoConsume();
     }
 }

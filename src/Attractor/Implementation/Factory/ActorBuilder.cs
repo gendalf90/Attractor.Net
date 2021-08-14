@@ -21,6 +21,7 @@ namespace Attractor.Implementation.Factory
         private int? runningNumberLimit;
         private TimeSpan? launchTrottleTime;
         private TimeSpan? messageProcessingTimeout;
+        private bool useAutoConsume;
         private Func<IServiceProvider, IAddressPolicy> addressPolicyCreator;
         private BatchReceivingSettings batchReceivingSettings;
 
@@ -144,6 +145,11 @@ namespace Attractor.Implementation.Factory
             batchReceivingSettings.MessageBufferSize = size;
         }
 
+        public void UseAutoConsume()
+        {
+            useAutoConsume = true;
+        }
+
         public void Build()
         {
             services.AddSingleton<ActorFactory>();
@@ -164,6 +170,11 @@ namespace Attractor.Implementation.Factory
                 foreach (var decorator in commonDecorators.Reverse())
                 {
                     result = decorator.Wrap(result);
+                }
+
+                if (useAutoConsume)
+                {
+                    result = new AutoConsumeActorDecorator().Wrap(result);
                 }
 
                 if (messageProcessingTimeout.HasValue)
