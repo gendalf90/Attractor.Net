@@ -13,16 +13,16 @@ namespace Attractor.Implementation
 
         public override async ValueTask OnStartAsync(IContext context)
         {
-            await base.OnStartAsync(context);
-
             await handler.OnStartAsync(context);
+
+            await base.OnStartAsync(context);
         }
 
         public override async ValueTask OnReceiveAsync(IContext context)
         {
-            await base.OnReceiveAsync(context);
-
             await handler.OnReceiveAsync(context);
+
+            await base.OnReceiveAsync(context);
         }
     }
 }
