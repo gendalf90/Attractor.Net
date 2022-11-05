@@ -1,9 +1,6 @@
-﻿using System;
-
-namespace Attractor
+﻿namespace Attractor
 {
-    public interface IAddress
+    public interface IAddress : IVisitable, ICloneable<IAddress>, IEqualityProvider<IAddress>
     {
-        ReadOnlyMemory<byte> GetBytes();
     }
 }

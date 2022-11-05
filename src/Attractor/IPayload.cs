@@ -1,9 +1,6 @@
-﻿using System;
-
-namespace Attractor
+﻿namespace Attractor
 {
-    public interface IPayload
+    public interface IPayload : IVisitable, ICloneable<IPayload>
     {
-        ReadOnlyMemory<byte> GetBytes();
     }
 }

@@ -1,29 +1,21 @@
 ﻿namespace Attractor
 {
-    public abstract class TryResult<T>
+    public readonly struct TryResult<T>
     {
-        public bool IsSuccess { protected set; get; }
+        public bool Success { init; get; }
 
-        public T Value { protected set; get; }
+        public T Value { init; get; }
 
-        public static implicit operator bool(TryResult<T> result) => result.IsSuccess;
-    }
-
-    public sealed class TrueResult<T> : TryResult<T>
-    {
-        public TrueResult(T value)
+        public static TryResult<T> True(T value) => new TryResult<T>
         {
-            IsSuccess = true;
-            Value = value;
-        }
-    }
+            Value = value,
+            Success = true
+        };
 
-    public sealed class FalseResult<T> : TryResult<T>
-    {
-        public FalseResult()
+        public static TryResult<T> False(T value = default) => new TryResult<T>
         {
-            IsSuccess = false;
-            Value = default;
-        }
+            Value = value,
+            Success = false
+        };
     }
 }
