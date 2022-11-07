@@ -222,6 +222,7 @@ namespace Attractor.Implementation
                 var requestCompletion = new CompletionTokenSource();
                 var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(streamCancellation.Token, token);
                 var requestDisposing = requestCompletion.Attach();
+                var requestToken = requestCancellation.Token;
 
                 requestCancellation.Token.Register(requestCompletion.Dispose);
                 requestCompletion
@@ -233,7 +234,7 @@ namespace Attractor.Implementation
                         requestCancellation.Dispose();
                     });
 
-                return new Request(payload, requestDisposing, requestCompletion, requestCancellation);
+                return new Request(payload, requestDisposing, requestCompletion, requestCancellation, requestToken);
             }
 
             public Task WaitAsync(CancellationToken token = default)
@@ -263,13 +264,20 @@ namespace Attractor.Implementation
             private readonly CancellationTokenSource cancellation;
             private readonly IPayload payload;
             private readonly IDisposable disposing;
+            private readonly CancellationToken token;
 
-            public Request(IPayload payload, IDisposable disposing, CompletionTokenSource completion, CancellationTokenSource cancellation)
+            public Request(
+                IPayload payload, 
+                IDisposable disposing, 
+                CompletionTokenSource completion, 
+                CancellationTokenSource cancellation,
+                CancellationToken token)
             {
                 this.payload = payload;
                 this.disposing = disposing;
                 this.completion = completion;
                 this.cancellation = cancellation;
+                this.token = token;
             }
 
             public IPayload Clone()
@@ -301,14 +309,7 @@ namespace Attractor.Implementation
 
             public CancellationToken GetToken()
             {
-                try
-                {
-                    return cancellation.Token;
-                }
-                catch (ObjectDisposedException)
-                {
-                    return new CancellationToken(true);
-                }
+                return token;
             }
 
             public Task WaitAsync(CancellationToken token = default)

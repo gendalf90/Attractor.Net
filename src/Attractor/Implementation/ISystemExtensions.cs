@@ -6,19 +6,9 @@ namespace Attractor.Implementation
 {
     public static class ISystemExtensions
     {
-        public static async ValueTask PostAsync(this ISystem system, IAddress address, IPayload payload, Action<IContext> configuration = null, CancellationToken token = default)
-        {
-            await using (var reference = await system.UseAsync(address, token))
-            {
-                await reference.SendAndWaitAsync(payload, configuration, token);
-            }
-        }
-
         public static async ValueTask<UsableRef> UseAsync(this ISystem system, IAddress address, CancellationToken token = default)
         {
-            var reference = await system.GetAsync(address, token);
-
-            return new UsableRef(reference);
+            return new UsableRef(await system.GetAsync(address, token));
         }
 
         public sealed class UsableRef : IRef, IAsyncDisposable

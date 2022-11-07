@@ -8,6 +8,9 @@ using Moq;
 using System.Threading;
 using System;
 using Attractor.Implementation;
+using Newtonsoft.Json.Linq;
+using System.Net;
+using Xunit.Sdk;
 
 namespace Attractor.Tests
 {
@@ -32,10 +35,12 @@ namespace Attractor.Tests
                 .Build();
 
             // Act
-            await host
-                .Services
-                .GetService<ISystem>()
-                .PostAsync(StringBuffer.Address("address"), EmptyBuffer.Payload());
+            var system = host.Services.GetService<ISystem>();
+
+            await using (var reference = await system.UseAsync(StringBuffer.Address("address")))
+            {
+                await reference.PostAsync(EmptyBuffer.Payload());
+            }
 
             // Assert
             Assert.True(isStarted);
@@ -61,10 +66,12 @@ namespace Attractor.Tests
                 .Build();
 
             // Act
-            await host
-                .Services
-                .GetService<ISystem>()
-                .PostAsync(StringBuffer.Address("address"), StringBuffer.Payload(sentMessage));
+            var system = host.Services.GetService<ISystem>();
+
+            await using (var reference = await system.UseAsync(StringBuffer.Address("address")))
+            {
+                await reference.PostAsync(StringBuffer.Payload(sentMessage));
+            }
 
             // Assert
             Assert.Equal(sentMessage, receivedMessage);
@@ -90,10 +97,12 @@ namespace Attractor.Tests
                 .Build();
 
             // Act
-            await host
-                .Services
-                .GetService<ISystem>()
-                .PostAsync(StringBuffer.Address("address"), EmptyBuffer.Payload());
+            var system = host.Services.GetService<ISystem>();
+
+            await using (var reference = await system.UseAsync(StringBuffer.Address("address")))
+            {
+                await reference.PostAsync(EmptyBuffer.Payload());
+            }
 
             // Assert
             Assert.Equal(new[] { 1, 2, 3 }, received);
@@ -119,10 +128,12 @@ namespace Attractor.Tests
                 .Build();
 
             // Act
-            await host
-                .Services
-                .GetService<ISystem>()
-                .PostAsync(StringBuffer.Address("address"), EmptyBuffer.Payload());
+            var system = host.Services.GetService<ISystem>();
+
+            await using (var reference = await system.UseAsync(StringBuffer.Address("address")))
+            {
+                await reference.PostAsync(EmptyBuffer.Payload());
+            }
 
             // Assert
             Assert.Equal(new[] { 1, 2, 3 }, received);
