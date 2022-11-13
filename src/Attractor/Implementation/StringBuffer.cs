@@ -88,6 +88,11 @@ namespace Attractor.Implementation
             {
                 return value.GetHashCode();
             }
+
+            public override string ToString()
+            {
+                return value;
+            }
         }
 
         private class InternalStringAddressPolicy : IAddressPolicy

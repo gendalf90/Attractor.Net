@@ -13,7 +13,7 @@ namespace Attractor.Implementation
 
         public static IAddressPolicy Policy(ReadOnlyMemory<byte> bytes)
         {
-            return new InternalBytesBuffer(bytes);
+            return new InternalStrategyAddressPolicy(value => value.Span.SequenceEqual(bytes.Span));
         }
 
         public static IAddress Address(ReadOnlyMemory<byte> bytes)
@@ -41,11 +41,9 @@ namespace Attractor.Implementation
             });
         }
 
-        private class InternalBytesBuffer : IAddress, IPayload, IAddressPolicy, IEquatable<IAddress>
+        private class InternalBytesBuffer : IAddress, IPayload, IEquatable<IAddress>
         {
             private readonly ReadOnlyMemory<byte> value;
-
-            public ReadOnlyMemory<byte> Value => value;
 
             public InternalBytesBuffer(ReadOnlyMemory<byte> value)
             {
@@ -60,11 +58,6 @@ namespace Attractor.Implementation
             IPayload ICloneable<IPayload>.Clone()
             {
                 return this;
-            }
-
-            public bool IsMatch(IAddress address)
-            {
-                return Equals(address);
             }
 
             public void Accept(IVisitor visitor)
@@ -98,6 +91,11 @@ namespace Attractor.Implementation
                 result.AddBytes(value.Span);
 
                 return result.ToHashCode();
+            }
+
+            public override string ToString()
+            {
+                return BitConverter.ToString(value.ToArray());
             }
         }
 

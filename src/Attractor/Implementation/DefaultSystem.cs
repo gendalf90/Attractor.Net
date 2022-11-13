@@ -140,7 +140,7 @@ namespace Attractor.Implementation
                     }
                 }
 
-                throw new InvalidOperationException();
+                throw new InvalidOperationException($"No registered streams with address {address} found");
             }
         }
 

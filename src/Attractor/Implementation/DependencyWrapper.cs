@@ -1,9 +1,6 @@
-﻿using System;
-using System.Threading.Tasks;
-
-namespace Attractor.Implementation
+﻿namespace Attractor.Implementation
 {
-    internal class DependencyWrapper<TValue> //: IAsyncDisposable
+    internal class DependencyWrapper<TValue>
     {
         private readonly TValue value;
 
@@ -13,10 +10,5 @@ namespace Attractor.Implementation
         }
 
         public TValue Value { get => value; }
-
-        //public ValueTask DisposeAsync()
-        //{
-        //    return value.TryDisposeAsync();
-        //}
     }
 }
