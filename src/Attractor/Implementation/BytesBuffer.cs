@@ -1,105 +1,112 @@
 ﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
-    public static class BytesBuffer
+    internal sealed class BytesBuffer : IAddress, IPayload
     {
-        public static IAddressPolicy Policy(Func<ReadOnlyMemory<byte>, bool> strategy)
+        private readonly ReadOnlyMemory<byte> value;
+
+        public BytesBuffer(ReadOnlyMemory<byte> value)
         {
-            return new InternalStrategyAddressPolicy(strategy);
+            this.value = value;
         }
 
-        public static IAddressPolicy Policy(ReadOnlyMemory<byte> bytes)
+        public static IAddressPolicy CreatePolicy(Predicate<ReadOnlyMemory<byte>> predicate)
         {
-            return new InternalStrategyAddressPolicy(value => value.Span.SequenceEqual(bytes.Span));
+            return new AddressPolicy(predicate);
         }
 
-        public static IAddress Address(ReadOnlyMemory<byte> bytes)
+        void IVisitable.Accept<T>(T visitor)
         {
-            return new InternalBytesBuffer(bytes);
+            visitor.Visit(value);
         }
 
-        public static IPayload Payload(ReadOnlyMemory<byte> bytes)
+        bool IEquatable<IAddress>.Equals(IAddress other)
         {
-            return new InternalBytesBuffer(bytes);
-        }
+            var visitor = new ValueVisitor();
 
-        public static IStreamHandler Process(Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> strategy)
-        {
-            return new InternalStrategyHandler(strategy);
-        }
+            other.Accept(visitor);
 
-        public static IStreamHandler Process(Action<ReadOnlyMemory<byte>> strategy)
-        {
-            return new InternalStrategyHandler((buffer, _) =>
+            if (!visitor.Result.Success)
             {
-                strategy(buffer);
-
-                return ValueTask.CompletedTask;
-            });
-        }
-
-        private class InternalBytesBuffer : IAddress, IPayload, IEquatable<IAddress>
-        {
-            private readonly ReadOnlyMemory<byte> value;
-
-            public InternalBytesBuffer(ReadOnlyMemory<byte> value)
-            {
-                this.value = value;
+                return false;
             }
 
-            IAddress ICloneable<IAddress>.Clone()
+            return value.Span.SequenceEqual(visitor.Result.Value.Span);
+        }
+
+        public override int GetHashCode()
+        {
+            var result = new HashCode();
+            
+            result.AddBytes(value.Span);
+
+            return result.ToHashCode();
+
+            //unchecked
+            //{
+            //    var result = 0;
+
+            //    foreach (var b in bytes.AsSpan())
+            //    {
+            //        result = (result * 31) ^ b;
+            //    }
+
+            //    return result;
+            //}
+
+            //var result = new HashCode();
+
+            //var longs = MemoryMarshal.Cast<byte, long>(bytes.AsSpan());
+            //var rest = bytes.AsSpan().Slice(longs.Length * sizeof(long));
+
+            //result.AddBytes(rest);
+
+            //foreach (long l in longs)
+            //{
+            //    result.Add(l);
+            //}
+
+            //foreach (byte b in rest)
+            //{
+            //    result.Add(b);
+            //}
+
+            //result.AddBytes(bytes.Value.Span);
+
+            //return result.ToHashCode();
+        }
+
+        public override string ToString()
+        {
+            return BitConverter.ToString(value.ToArray());
+        }
+
+        private class AddressPolicy : IAddressPolicy
+        {
+            private readonly Predicate<ReadOnlyMemory<byte>> predicate;
+
+            public AddressPolicy(Predicate<ReadOnlyMemory<byte>> predicate)
             {
-                return this;
+                this.predicate = predicate;
             }
 
-            IPayload ICloneable<IPayload>.Clone()
-            {
-                return this;
-            }
-
-            public void Accept(IVisitor visitor)
-            {
-                visitor.Visit(value);
-            }
-
-            public IEquatable<IAddress> GetEquatable()
-            {
-                return this;
-            }
-
-            public bool Equals(IAddress other)
+            bool IAddressPolicy.IsMatch(IAddress address)
             {
                 var visitor = new ValueVisitor();
 
-                other.Accept(visitor);
+                address.Accept(visitor);
 
                 if (!visitor.Result.Success)
                 {
                     return false;
                 }
 
-                return value.Span.SequenceEqual(visitor.Result.Value.Span);
-            }
-
-            public override int GetHashCode()
-            {
-                var result = new HashCode();
-                
-                result.AddBytes(value.Span);
-
-                return result.ToHashCode();
-            }
-
-            public override string ToString()
-            {
-                return BitConverter.ToString(value.ToArray());
+                return predicate(visitor.Result.Value);
             }
         }
 
-        private class ValueVisitor : IVisitor
+        private struct ValueVisitor : IVisitor
         {
             public void Visit<T>(T value)
             {
@@ -118,60 +125,6 @@ namespace Attractor.Implementation
             }
 
             public TryResult<ReadOnlyMemory<byte>> Result { get; private set; }
-        }
-
-        private class InternalStrategyAddressPolicy : IAddressPolicy
-        {
-            private readonly Func<ReadOnlyMemory<byte>, bool> strategy;
-
-            public InternalStrategyAddressPolicy(Func<ReadOnlyMemory<byte>, bool> strategy)
-            {
-                this.strategy = strategy;
-            }
-
-            public bool IsMatch(IAddress address)
-            {
-                var visitor = new ValueVisitor();
-
-                address.Accept(visitor);
-
-                if (!visitor.Result.Success)
-                {
-                    return false;
-                }
-
-                return strategy(visitor.Result.Value);
-            }
-        }
-
-        private class InternalStrategyHandler : IStreamHandler
-        {
-            private readonly Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> strategy;
-
-            public InternalStrategyHandler(Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask> strategy)
-            {
-                this.strategy = strategy;
-            }
-
-            public ValueTask OnReceiveAsync(IContext context)
-            {
-                var request = context.Get<IRequest>();
-                var visitor = new ValueVisitor();
-
-                request.Accept(visitor);
-
-                if (!visitor.Result.Success)
-                {
-                    return ValueTask.CompletedTask;
-                }
-
-                return strategy(visitor.Result.Value, request.GetToken());
-            }
-
-            public ValueTask OnStartAsync(IContext context)
-            {
-                return ValueTask.CompletedTask;
-            }
         }
     }
 }

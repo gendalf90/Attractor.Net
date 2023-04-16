@@ -3,11 +3,11 @@ using System.Collections.Generic;
 
 namespace Attractor.Implementation
 {
-    internal static class Context
+    public static class Context
     {
         public static IContext Default()
         {
-            return new DefaultFeaturesDecorator(new DictionaryContext());
+            return new CachedTypesDecorator(new DictionaryContext());
         }
 
         private class DictionaryContext : IContext
@@ -51,44 +51,47 @@ namespace Attractor.Implementation
             }
         }
 
-        private class DefaultFeaturesDecorator : IContext
+        private class CachedTypesDecorator : IContext
         {
-            private readonly (Type Key, object Value)[] features = new (Type Key, object Value)[]
+            private static readonly Action<int>[] TypeInits =
             {
-                (typeof(IRef), null),
-                (typeof(IRequest), null),
-                (typeof(IServiceProvider), null),
-                (typeof(IAsyncToken), null),
-                (typeof(ICompletionTokenSource), null)
+                IndexOf<IActorProcess>.Set
             };
+            
+            static CachedTypesDecorator()
+            {
+                for (int i = 0; i < TypeInits.Length; i++)
+                {
+                    TypeInits[i](i);
+                }
+            }
+            
+            private readonly object[] values = new object[TypeInits.Length];
 
             private readonly IContext context;
 
-            public DefaultFeaturesDecorator(IContext context)
+            public CachedTypesDecorator(IContext context)
             {
                 this.context = context;
             }
 
-            private bool TryGetFromCommon<T>(out T result) where T : class
+            private bool TryGetFromCached<T>(out T result) where T : class
             {
                 result = null;
                 
-                for (int i = 0; i < features.Length; i++)
+                if (!IndexOf<T>.TryGet(out var index))
                 {
-                    if (features[i].Key == typeof(T))
-                    {
-                        result = features[i].Value as T;
-
-                        return true;
-                    }
+                    return false;
                 }
 
-                return false;
+                result = values[index] as T;
+                
+                return true;
             }
 
             public T Get<T>() where T : class
             {
-                if (TryGetFromCommon<T>(out var result))
+                if (TryGetFromCached<T>(out var result))
                 {
                     return result;
                 }
@@ -96,24 +99,21 @@ namespace Attractor.Implementation
                 return context.Get<T>();
             }
 
-            private bool TrySetToCommon<T>(T value) where T : class
+            private bool TrySetToCached<T>(T value) where T : class
             {
-                for (int i = 0; i < features.Length; i++)
+                if (!IndexOf<T>.TryGet(out var index))
                 {
-                    if (features[i].Key == typeof(T))
-                    {
-                        features[i].Value = value;
-
-                        return true;
-                    }
+                    return false;
                 }
 
-                return false;
+                values[index] = value;
+
+                return true;
             }
 
             public void Set<T>(T value) where T : class
             {
-                if (!TrySetToCommon(value))
+                if (!TrySetToCached(value))
                 {
                     context.Set(value);
                 }
@@ -121,14 +121,33 @@ namespace Attractor.Implementation
 
             public IContext Clone()
             {
-                var result = new DefaultFeaturesDecorator(context.Clone());
+                var result = new CachedTypesDecorator(context.Clone());
 
-                for (int i = 0; i < features.Length; i++)
+                for (int i = 0; i < values.Length; i++)
                 {
-                    result.features[i].Value = features[i].Value;
+                    result.values[i] = values[i];
                 }
 
                 return result;
+            }
+
+            private static class IndexOf<T>
+            {
+                private const int NotInitialized = -1;
+                
+                private static int index = NotInitialized;
+
+                public static void Set(int value)
+                {
+                    index = value;
+                }
+
+                public static bool TryGet(out int value)
+                {
+                    value = index;
+
+                    return index > NotInitialized;
+                }
             }
         }
     }

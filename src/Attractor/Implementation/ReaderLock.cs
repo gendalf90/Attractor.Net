@@ -11,7 +11,7 @@ namespace Attractor.Implementation
         private const int CompletedState = 2;
         private const int DisposedState = 3;
 
-        private TaskCompletionSource completionSource = new TaskCompletionSource();
+        private readonly TaskCompletionSource completionSource = new();
 
         private uint locksCount;
         private int state;
@@ -59,9 +59,12 @@ namespace Attractor.Implementation
 
         public void Dispose()
         {
-            using (Lock(out _))
+            using (Lock(out var isAcquired))
             {
-                Interlocked.CompareExchange(ref state, CompletionState, InitialState);
+                if (isAcquired)
+                {
+                    Interlocked.CompareExchange(ref state, CompletionState, InitialState);
+                }
             }
         }
 

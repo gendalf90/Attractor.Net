@@ -1,6 +1,8 @@
-﻿namespace Attractor
+﻿using System;
+
+namespace Attractor
 {
-    public interface IAddress : IVisitable, ICloneable<IAddress>, IEqualityProvider<IAddress>
+    public interface IAddress : IVisitable, IEquatable<IAddress>
     {
     }
 }

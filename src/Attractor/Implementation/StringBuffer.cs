@@ -1,162 +1,85 @@
 ﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
-    public static class StringBuffer
+    internal sealed class StringBuffer : IAddress, IPayload
     {
-        public static IAddressPolicy Policy(Func<string, bool> strategy)
+        private readonly string value;
+
+        public StringBuffer(string value)
         {
-            return new InternalStringAddressPolicy(strategy);
+            this.value = value;
         }
 
-        public static IAddressPolicy Policy(string value)
+        public static IAddressPolicy CreatePolicy(Predicate<string> predicate)
         {
-            return new InternalStringAddressPolicy(parsed => parsed == value);
+            return new AddressPolicy(predicate);
         }
 
-        public static IAddress Address(string value)
+        void IVisitable.Accept<T>(T visitor)
         {
-            return new InternalStringBuffer(value);
+            visitor.Visit(value);
         }
 
-        public static IPayload Payload(string value)
+        public bool Equals(IAddress other)
         {
-            return new InternalStringBuffer(value);
+            var visitor = new ValueVisitor();
+
+            other.Accept(visitor);
+
+            if (!visitor.Result.Success)
+            {
+                return false;
+            }
+
+            return visitor.Result.Value == value;
         }
 
-        public static IStreamHandler Process(Func<string, CancellationToken, ValueTask> strategy)
+        public override int GetHashCode()
         {
-            return new InternalStrategyHandler(strategy);
+            return value.GetHashCode();
         }
 
-        public static IStreamHandler Process(Action<string> strategy)
+        public override string ToString()
         {
-            return new InternalStrategyHandler((buffer, _) =>
-            {
-                strategy(buffer);
-
-                return ValueTask.CompletedTask;
-            });
+            return value;
         }
 
-        private class InternalStringBuffer : IAddress, IPayload, IEquatable<IAddress>
+        private class AddressPolicy : IAddressPolicy
         {
-            private readonly string value;
+            private readonly Predicate<string> predicate;
 
-            public InternalStringBuffer(string value)
+            public AddressPolicy(Predicate<string> predicate)
             {
-                this.value = value;
+                this.predicate = predicate;
             }
 
-            IAddress ICloneable<IAddress>.Clone()
+            bool IAddressPolicy.IsMatch(IAddress address)
             {
-                return this;
-            }
-
-            IPayload ICloneable<IPayload>.Clone()
-            {
-                return this;
-            }
-
-            public void Accept(IVisitor visitor)
-            {
-                visitor.Visit(value);
-            }
-
-            public IEquatable<IAddress> GetEquatable()
-            {
-                return this;
-            }
-
-            public bool Equals(IAddress other)
-            {
-                var visitor = new StringValueVisitor();
-
-                other.Accept(visitor);
-
-                if (visitor.Result == null)
-                {
-                    return false;
-                }
-
-                return visitor.Result == value;
-            }
-
-            public override int GetHashCode()
-            {
-                return value.GetHashCode();
-            }
-
-            public override string ToString()
-            {
-                return value;
-            }
-        }
-
-        private class InternalStringAddressPolicy : IAddressPolicy
-        {
-            private readonly Func<string, bool> strategy;
-
-            public InternalStringAddressPolicy(Func<string, bool> strategy)
-            {
-                this.strategy = strategy;
-            }
-
-            public bool IsMatch(IAddress address)
-            {
-                var visitor = new StringValueVisitor();
+                var visitor = new ValueVisitor();
 
                 address.Accept(visitor);
 
-                if (visitor.Result == null)
+                if (!visitor.Result.Success)
                 {
                     return false;
                 }
 
-                return strategy(visitor.Result);
+                return predicate(visitor.Result.Value);
             }
         }
 
-        private class StringValueVisitor : IVisitor
+        private struct ValueVisitor : IVisitor
         {
             public void Visit<T>(T value)
             {
-                Result = value as string;
-            }
-
-            public string Result { get; private set; }
-        }
-
-        private class InternalStrategyHandler : IStreamHandler
-        {
-            private readonly Func<string, CancellationToken, ValueTask> strategy;
-
-            public InternalStrategyHandler(Func<string, CancellationToken, ValueTask> strategy)
-            {
-                this.strategy = strategy;
-            }
-
-            public ValueTask OnReceiveAsync(IContext context)
-            {
-                var request = context.Get<IRequest>();
-                var visitor = new StringValueVisitor();
-
-                request.Accept(visitor);
-
-                if (visitor.Result == null)
+                if (value is string str)
                 {
-                    return ValueTask.CompletedTask;
+                    Result = TryResult<string>.True(str);
                 }
-
-                return strategy(visitor.Result, request.GetToken());
             }
 
-            public ValueTask OnStartAsync(IContext context)
-            {
-                return ValueTask.CompletedTask;
-            }
+            public TryResult<string> Result { get; private set; }
         }
     }
 }

@@ -7,7 +7,7 @@ namespace Attractor.Implementation
 {
     internal static class DynamicType
     {
-        private static int typeKeyNumber;
+        private static ulong typeKeyNumber;
 
         private readonly static ModuleBuilder moduleBuilder = AssemblyBuilder
             .DefineDynamicAssembly(new AssemblyName("DynamicAssembly"), AssemblyBuilderAccess.Run)
