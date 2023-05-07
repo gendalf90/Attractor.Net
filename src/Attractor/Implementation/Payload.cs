@@ -21,6 +21,13 @@ namespace Attractor.Implementation
             return new TypedBuffer<T>(value);
         }
 
+        public static bool MatchType<T>(IPayload payload)
+        {
+            var result = payload.Accept(new MatchTypeVisitor<T>());
+
+            return result.IsMatch;
+        }
+
         public static IPayload Empty()
         {
             return instance;
@@ -28,9 +35,40 @@ namespace Attractor.Implementation
 
         private class EmptyBuffer : IPayload
         {
-            void IVisitable.Accept<T>(T visitor)
+            T IVisitable.Accept<T>(T visitor)
             {
+                return visitor;
             }
+        }
+
+        private class TypedBuffer<T> : IPayload
+        {
+            private readonly T value;
+
+            public TypedBuffer(T value)
+            {
+                this.value = value;
+            }
+
+            TVisitor IVisitable.Accept<TVisitor>(TVisitor visitor)
+            {
+                visitor.Visit(value);
+
+                return visitor;
+            }
+        }
+
+        private struct MatchTypeVisitor<TType> : IVisitor
+        {
+            public void Visit<TValue>(TValue value)
+            {
+                if (typeof(TValue) == typeof(TType))
+                {
+                    IsMatch = true;
+                }
+            }
+
+            public bool IsMatch { get; private set; }
         }
     }
 }

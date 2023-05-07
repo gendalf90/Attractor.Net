@@ -6,6 +6,8 @@ namespace Attractor
 {
     public interface ISupervisor
     {
-        ValueTask OnFaultAsync(IContext context, Exception exception, CancellationToken token = default);
+        ValueTask OnStoppedAsync(IContext context, CancellationToken token = default);
+        
+        ValueTask OnProcessedAsync(IContext context, Exception error, CancellationToken token = default);
     }
 }

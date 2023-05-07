@@ -12,10 +12,10 @@ namespace Attractor.Implementation
 
         async void IThreadPoolWorkItem.Execute()
         {
+            ResetLock();
+            
             try
             {
-                ResetLock();
-                
                 await ProcessAsync();
             }
             catch 

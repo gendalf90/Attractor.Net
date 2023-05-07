@@ -7,7 +7,8 @@ namespace Attractor.Implementation
 {
     internal sealed class SpinSemaphore : ISemaphore
     {
-        private readonly ConcurrentQueue<TaskCompletionSource<IAsyncDisposable>> completions = new();
+        //private readonly ConcurrentQueue<TaskCompletionSource<IAsyncDisposable>> completions = new();
+        private readonly LinkedQueue<TaskCompletionSource<IAsyncDisposable>> completions = new();
         private readonly long limit;
 
         private long counter;

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace Attractor.Implementation
 {
@@ -8,6 +9,11 @@ namespace Attractor.Implementation
         public static IContext Default()
         {
             return new CachedTypesDecorator(new DictionaryContext());
+        }
+
+        public static void Cache<T>()
+        {
+            CachedTypesDecorator.IndexOf<T>.Initialize();
         }
 
         private class DictionaryContext : IContext
@@ -53,20 +59,9 @@ namespace Attractor.Implementation
 
         private class CachedTypesDecorator : IContext
         {
-            private static readonly Action<int>[] TypeInits =
-            {
-                IndexOf<IActorProcess>.Set
-            };
+            private static long length;
             
-            static CachedTypesDecorator()
-            {
-                for (int i = 0; i < TypeInits.Length; i++)
-                {
-                    TypeInits[i](i);
-                }
-            }
-            
-            private readonly object[] values = new object[TypeInits.Length];
+            private readonly object[] values = new object[Interlocked.Read(ref length)];
 
             private readonly IContext context;
 
@@ -80,6 +75,11 @@ namespace Attractor.Implementation
                 result = null;
                 
                 if (!IndexOf<T>.TryGet(out var index))
+                {
+                    return false;
+                }
+
+                if (index >= values.LongLength)
                 {
                     return false;
                 }
@@ -102,6 +102,11 @@ namespace Attractor.Implementation
             private bool TrySetToCached<T>(T value) where T : class
             {
                 if (!IndexOf<T>.TryGet(out var index))
+                {
+                    return false;
+                }
+
+                if (index >= values.LongLength)
                 {
                     return false;
                 }
@@ -131,22 +136,28 @@ namespace Attractor.Implementation
                 return result;
             }
 
-            private static class IndexOf<T>
+            public static class IndexOf<T>
             {
-                private const int NotInitialized = -1;
-                
-                private static int index = NotInitialized;
+                private const int Initialized = 1;
+                private const int NotInitialized = 0;
+                private const long DefaultIndex = -1;
 
-                public static void Set(int value)
+                private static int state = NotInitialized;
+                private static long index = DefaultIndex;
+
+                public static void Initialize()
                 {
-                    index = value;
+                    if (Interlocked.CompareExchange(ref state, Initialized, NotInitialized) == NotInitialized)
+                    {
+                        Interlocked.Exchange(ref index, Interlocked.Increment(ref length) - 1);
+                    }
                 }
 
-                public static bool TryGet(out int value)
+                public static bool TryGet(out long value)
                 {
-                    value = index;
+                    value = Interlocked.Read(ref index);
 
-                    return index > NotInitialized;
+                    return value > DefaultIndex;
                 }
             }
         }

@@ -80,34 +80,6 @@ namespace Attractor
                 buildList.Add((_, builder) => builder.DecorateActor(factory));
             }
 
-            void IServicesActorBuilder.DecorateMailbox<T>(Func<IServiceProvider, T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((provider, builder) => builder.DecorateMailbox(Partial(factory, provider)));
-            }
-
-            void IActorBuilder.DecorateMailbox<T>(Func<T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((_, builder) => builder.DecorateMailbox(factory));
-            }
-
-            void IServicesActorBuilder.DecorateSupervisor<T>(Func<IServiceProvider, T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((provider, builder) => builder.DecorateSupervisor(Partial(factory, provider)));
-            }
-
-            void IActorBuilder.DecorateSupervisor<T>(Func<T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((_, builder) => builder.DecorateSupervisor(factory));
-            }
-
             void IServicesActorBuilder.RegisterActor<T>(Func<IServiceProvider, T> factory)
             {
                 ArgumentNullException.ThrowIfNull(factory, nameof(factory));
@@ -120,34 +92,6 @@ namespace Attractor
                 ArgumentNullException.ThrowIfNull(factory, nameof(factory));
                 
                 buildList.Add((_, builder) => builder.RegisterActor(factory));
-            }
-
-            void IServicesActorBuilder.RegisterMailbox<T>(Func<IServiceProvider, T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((provider, builder) => builder.RegisterMailbox(Partial(factory, provider)));
-            }
-
-            void IActorBuilder.RegisterMailbox<T>(Func<T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((_, builder) => builder.RegisterMailbox(factory));
-            }
-
-            void IServicesActorBuilder.RegisterSupervisor<T>(Func<IServiceProvider, T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((provider, builder) => builder.RegisterSupervisor(Partial(factory, provider)));
-            }
-
-            void IActorBuilder.RegisterSupervisor<T>(Func<T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-                
-                buildList.Add((_, builder) => builder.RegisterSupervisor(factory));
             }
 
             private static Func<TOutput> Partial<TInput, TOutput>(Func<TInput, TOutput> func, TInput value)

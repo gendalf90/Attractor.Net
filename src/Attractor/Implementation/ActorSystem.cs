@@ -7,6 +7,13 @@ namespace Attractor.Implementation
 {
     public sealed class ActorSystem : IActorSystem
     {
+        static ActorSystem()
+        {
+            Context.Cache<IAddress>();
+            Context.Cache<IPayload>();
+            Context.Cache<ISupervisor>();
+        }
+        
         private readonly Dictionary<IAddress, ActorProcess> processes = new(AddressEqualityComparer.Default);
         private readonly LinkedList<ActorProcessBuilder> builders = new();
         private readonly CommandQueue commands = new();
@@ -23,9 +30,13 @@ namespace Attractor.Implementation
             return new ActorSystem(token);
         }
 
-        IActorRef IActorSystem.Ref(IAddress address)
+        async ValueTask<Try<IActorRef>> IActorSystem.TryGetRefAsync(IAddress address)
         {
-            return new ActorRef(address, this);
+            var process = await GetOrCreateProcessAsync(address);
+
+            return process == null 
+                ? Try<IActorRef>.False() 
+                : Try<IActorRef>.True(new ActorRef(this, process, address));
         }
 
         void IActorSystem.Register(IAddressPolicy policy, Action<IActorBuilder> configuration)
@@ -34,7 +45,7 @@ namespace Attractor.Implementation
 
             configuration?.Invoke(builder);
 
-            commands.Schedule(new SyncStrategyCommand(() =>
+            commands.Schedule(new StrategyCommand(() =>
             {
                 builders.AddLast(builder);
             }));
@@ -44,7 +55,7 @@ namespace Attractor.Implementation
         {
             var completion = new TaskCompletionSource<ActorProcess>();
 
-            commands.Schedule(new SyncStrategyCommand(() =>
+            commands.Schedule(new StrategyCommand(() =>
             {
                 if (processes.TryGetValue(address, out var result))
                 {
@@ -59,311 +70,179 @@ namespace Attractor.Implementation
             return await completion.Task;
         }
 
-        private class TryBuildProcessCommand : ICommand
+        private record TryBuildProcessCommand(
+            TaskCompletionSource<ActorProcess> Completion,
+            LinkedListNode<ActorProcessBuilder> Node,
+            IAddress Address, 
+            ActorSystem System) : ICommand
         {
-            private readonly IAddress address;
-            private readonly LinkedListNode<ActorProcessBuilder> node;
-            private readonly TaskCompletionSource<ActorProcess> completion;
-            private readonly ActorSystem system;
-
-            public TryBuildProcessCommand(
-                TaskCompletionSource<ActorProcess> completion,
-                LinkedListNode<ActorProcessBuilder> node,
-                IAddress address,
-                ActorSystem system)
-            {
-                this.completion = completion;
-                this.node = node;
-                this.address = address;
-                this.system = system;
-            }
-
             ValueTask ICommand.ExecuteAsync()
             {
                 try
                 {
-                    if (system.processes.TryGetValue(address, out var result))
+                    if (System.processes.TryGetValue(Address, out var result))
                     {
-                        completion.SetResult(result);
+                        Completion.SetResult(result);
                     }
-                    else if (node == null)
+                    else if (Node == null)
                     {
-                        completion.SetException(new InvalidOperationException());
+                        Completion.SetResult(null);
                     }
-                    else if (!node.Value.CanBuild(address))
+                    else if (Node.Value.TryBuildProcess(Address, out var process))
                     {
-                        system.commands.Schedule(new TryBuildProcessCommand(completion, node.Next, address, system));
+                        System.processes.Add(Address, process);
+
+                        Completion.SetResult(process);
                     }
                     else
                     {
-                        var process = node.Value.BuildProcess(address);
-
-                        process.Init();
-
-                        system.processes.Add(address, process);
-
-                        completion.SetResult(process);
+                        System.commands.Schedule(new TryBuildProcessCommand(Completion, Node.Next, Address, System));
                     }
                 }
                 catch (Exception ex)
                 {
-                    completion.SetException(ex);
+                    Completion.SetException(ex);
                 }
                 
                 return ValueTask.CompletedTask;
             }
         }
 
-        private void CloneProcess(IAddress address, ActorProcess process)
-        {
-            commands.Schedule(new SyncStrategyCommand(() =>
-            {
-                process.Init();
-                process.Touch();
-
-                processes[address] = process;
-            }));
-        }
-
         private void RemoveProcess(IAddress address)
         {
-            commands.Schedule(new SyncStrategyCommand(() =>
+            commands.Schedule(new StrategyCommand(() =>
             {
                 processes.Remove(address);
             }));
         }
 
-        private class SyncStrategyCommand : ICommand
+        private record ActorRef(ActorSystem System, ActorProcess Process, IAddress Address) : IActorRef
         {
-            private readonly Action strategy;
-
-            public SyncStrategyCommand(Action strategy)
+            void IActorRef.Send(IPayload payload, Action<IContext> configuration)
             {
-                this.strategy = strategy;
-            }
-            
-            ValueTask ICommand.ExecuteAsync()
-            {
-                strategy();
+                ArgumentNullException.ThrowIfNull(payload, nameof(payload));
+                
+                System.token.ThrowIfCancellationRequested();
+                
+                var context = Context.Default();
 
-                return ValueTask.CompletedTask;
+                context.Set(Address);
+                context.Set(payload);
+                
+                configuration?.Invoke(context);
+
+                Process.Send(context);
             }
         }
 
-        private class ActorRef : IActorRef
+        private class ActorProcess
         {
-            private readonly IAddress address;
-            private readonly ActorSystem system;
-            
-            private ActorProcess process;
+            private readonly CommandQueue commands = new();
 
-            public ActorRef(IAddress address, ActorSystem system)
+            private readonly ActorSystem system;
+            private readonly IActor actor;
+            private readonly IAddress address;
+
+            private ActorProcess next;
+            private bool isStopped;
+
+            public ActorProcess(ActorSystem system, IActor actor, IAddress address)
             {
-                this.address = address;
                 this.system = system;
+                this.actor = actor;
+                this.address = address;
             }
 
-            async ValueTask IActorRef.SendAsync(IPayload payload, Action<IContext> configuration, CancellationToken token)
-            {
-                do
+            public void Send(IContext context)
+            {   
+                commands.Schedule(new StrategyCommand(async () =>
                 {
-                    var current = Interlocked.CompareExchange(ref process, null, null);
-                    
-                    try
+                    if (await TryStopAsync(context))
                     {
-                        if (current == null)
-                        {
-                            current = await system.GetOrCreateProcessAsync(address);
-
-                            Interlocked.CompareExchange(ref process, current, null);
-                        }
-
-                        var context = Context.Default();
-
-                        context.Set(address);
-                        context.Set(payload);
-
-                        configuration?.Invoke(context);
-
-                        await current.SendAsync(context, token);
-
                         return;
                     }
-                    catch (OperationCanceledException cancel) when (current.CheckToken(cancel.CancellationToken))
+
+                    if (await TrySendToNextProcessAsync(context))
                     {
-                        try
-                        {
-                            await current.WaitAsync(token);
-                        }
-                        finally
-                        {
-                            Interlocked.CompareExchange(ref process, null, current);
-                        }
+                        return;
                     }
-                }
-                while (true);
+                    
+                    await ProcessAsync(context);
+                }));
             }
-        }
 
-        private class ActorProcess : Particle, IActorProcess
-        {
-            private const long Started = 0;
-            private const long Cancelled = 1;
-            private const long Cloned = 2;
-            private const long Finished = 3;
-
-            
-            private readonly ActorSystem system;
-            private readonly ActorProcessBuilder builder;
-            private readonly IAddress address;
-            private readonly ISupervisor supervisor;
-            private readonly IMailbox mailbox;
-            private readonly IContext context;
-
-            private IActor actor;
-            private CancellationTokenSource cancellation;
-            private TaskCompletionSource completion;
-            private IAsyncDisposable disposing;
-            private long state;
-
-            public ActorProcess(
-                ActorSystem system,
-                ActorProcessBuilder builder,
-                IAddress address,
-                IMailbox mailbox, 
-                ISupervisor supervisor,
-                IContext context)
+            private async ValueTask<bool> TryStopAsync(IContext context)
             {
-                this.system = system;
-                this.builder = builder;
-                this.address = address;
-                this.mailbox = mailbox;
-                this.supervisor = supervisor;
-                this.context = context;
-            }
-
-            public bool CheckToken(CancellationToken token)
-            {
-                return cancellation.Token == token;
-            }
-
-            public async ValueTask WaitAsync(CancellationToken token = default)
-            {
-                await completion.Task.WaitAsync(token);
-            }
-
-            public async ValueTask SendAsync(IContext context, CancellationToken token)
-            {   
-                using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token, token);
-                
-                source.Token.ThrowIfCancellationRequested();
-
-                await mailbox.SendAsync(context, source.Token);
-                
-                Touch();
-            }
-
-            public void Init()
-            {
-                cancellation = CancellationTokenSource.CreateLinkedTokenSource(system.token);
-                completion = new TaskCompletionSource();
-
-                context.Set(address);
-                context.Set<IActorProcess>(this);
-
-                var registration = cancellation.Token.Register(Touch);
-
-                disposing = Disposable.Create(async () =>
+                if (isStopped)
                 {
-                    using (Disposable.Create(completion.SetResult))
-                    using (Disposable.Create(CleanOrUpdateProcesses))
-                    await using (actor)
+                    return false;
+                }
+                
+                var payload = context.Get<IPayload>();
+
+                if (payload == null)
+                {
+                    return false;
+                }
+
+                if (!Payload.MatchType<StoppingMessage>(payload))
+                {
+                    return false;
+                }
+
+                using (Disposable.Create(() => system.RemoveProcess(address)))
+                await using (actor)
+                {
+                    isStopped = true;
+
+                    var supervisor = context.Get<ISupervisor>();
+
+                    if (supervisor != null)
                     {
-                        registration.Dispose();
+                        await supervisor.OnStoppedAsync(context, system.token);
                     }
-                });
-            }
 
-            private void CleanOrUpdateProcesses()
-            {
-                if (Interlocked.Exchange(ref state, Finished) == Cloned)
-                {
-                    system.CloneProcess(address, new ActorProcess(system, builder, address, mailbox, supervisor, context));
-                }
-                else
-                {
-                    system.RemoveProcess(address);
+                    return true;
                 }
             }
 
-            void IActorProcess.Clone()
+            private async ValueTask<bool> TrySendToNextProcessAsync(IContext context)
             {
-                Interlocked.Exchange(ref state, Cloned);
+                if (!isStopped)
+                {
+                    return false;
+                }
 
-                cancellation.Cancel();
+                next ??= await system.GetOrCreateProcessAsync(address);
+
+                next.Send(context);
+
+                return true;
             }
 
-            void IActorProcess.Awake(TimeSpan delay, CancellationToken token)
+            private async ValueTask ProcessAsync(IContext context)
             {
-                if (delay == default)
-                {
-                    Touch();
-
-                    return;
-                }
+                Exception error = null;
                 
-                var delaySource = new CancellationTokenSource(delay);
-                var cancelSource = CancellationTokenSource.CreateLinkedTokenSource(cancellation.Token, token);
-
-                delaySource.Token.Register(() =>
-                {
-                    cancelSource.Dispose();
-                    delaySource.Dispose();
-
-                    Touch();
-                });
-
-                cancelSource.Token.Register(() =>
-                {
-                    delaySource.Dispose();
-                    cancelSource.Dispose();
-                });
-            }
-
-            protected override async ValueTask ProcessAsync()
-            {
                 try
                 {
-                    cancellation.Token.ThrowIfCancellationRequested();
-                    
-                    while (await mailbox.ReceiveAsync(cancellation.Token) is var messageContext)
-                    {
-                        actor ??= builder.BuildActor();
-
-                        messageContext.Set<IActorProcess>(this);
-
-                        await actor.OnReceiveAsync(messageContext, cancellation.Token);
-                    }
+                    await actor.OnReceiveAsync(context, system.token);
                 }
                 catch (Exception e)
                 {
-                    if (!TryFinish())
-                    {
-                        return;
-                    }
-
-                    cancellation.Cancel();
+                    error = e;
                     
-                    await using (disposing)
+                    await actor.OnErrorAsync(context, e, system.token);
+                }
+                finally
+                {
+                    var supervisor = context.Get<ISupervisor>();
+
+                    if (supervisor != null)
                     {
-                        await supervisor.OnFaultAsync(context, e, system.token);
+                        await supervisor.OnProcessedAsync(context, error, system.token);
                     }
                 }
-            }
-
-            private bool TryFinish()
-            {
-                return Interlocked.CompareExchange(ref state, Cancelled, Started) != Finished;
             }
         }
 
@@ -373,17 +252,17 @@ namespace Attractor.Implementation
             private readonly IAddressPolicy policy;
 
             private Func<IActor, IActor> actorDecoratorFactory = _ => _;
-            private Func<IMailbox, IMailbox> mailboxDecoratorFactory = _ => _;
-            private Func<ISupervisor, ISupervisor> supervisorDecoratorFactory = _ => _;
-
-            private Func<IMailbox> defaultMailboxFactory = Mailbox.Default;
-            private Func<ISupervisor> defaultSupervisorFactory = Supervisor.Empty;
             private Func<IActor> defaultActorFactory = Actor.Empty;
 
             public ActorProcessBuilder(ActorSystem system, IAddressPolicy policy)
             {
                 this.system = system;
                 this.policy = policy;
+            }
+
+            void IActorBuilder.RegisterActor<T>(Func<T> factory)
+            {
+                defaultActorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
             }
 
             void IActorBuilder.DecorateActor<T>(Func<T> factory)
@@ -393,37 +272,18 @@ namespace Attractor.Implementation
                 actorDecoratorFactory = Decorate(actorDecoratorFactory, factory);
             }
 
-            void IActorBuilder.DecorateMailbox<T>(Func<T> factory)
+            public bool TryBuildProcess(IAddress address, out ActorProcess process)
             {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+                process = null;
 
-                mailboxDecoratorFactory = Decorate(mailboxDecoratorFactory, factory);
-            }
+                if (!policy.IsMatch(address))
+                {
+                    return false;
+                }
 
-            void IActorBuilder.DecorateSupervisor<T>(Func<T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+                process = new ActorProcess(system, actorDecoratorFactory(defaultActorFactory()), address);
 
-                supervisorDecoratorFactory = Decorate(supervisorDecoratorFactory, factory);
-            }
-
-            public bool CanBuild(IAddress address)
-            {
-                return policy.IsMatch(address);
-            }
-
-            public ActorProcess BuildProcess(IAddress address)
-            {
-                var mailbox = mailboxDecoratorFactory(defaultMailboxFactory());
-                var supervisor = supervisorDecoratorFactory(defaultSupervisorFactory());
-                var context = Context.Default();
-                
-                return new ActorProcess(system, this, address, mailbox, supervisor, context);
-            }
-
-            public IActor BuildActor()
-            {
-                return actorDecoratorFactory(defaultActorFactory());
+                return true;
             }
 
             private static Func<TResult, TResult> Decorate<TResult, TDecorator>(Func<TResult, TResult> resultFactory, Func<TDecorator> decoratorFactory) 
@@ -437,21 +297,6 @@ namespace Attractor.Implementation
 
                     return resultFactory(decorator);
                 };
-            }
-
-            void IActorBuilder.RegisterActor<T>(Func<T> factory)
-            {
-                defaultActorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
-            }
-
-            void IActorBuilder.RegisterMailbox<T>(Func<T> factory)
-            {
-                defaultMailboxFactory = factory ?? throw new ArgumentNullException(nameof(factory));
-            }
-
-            void IActorBuilder.RegisterSupervisor<T>(Func<T> factory)
-            {
-                defaultSupervisorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
             }
         }
     }

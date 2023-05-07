@@ -16,16 +16,16 @@ namespace Attractor.Implementation
             return new AddressPolicy(predicate);
         }
 
-        void IVisitable.Accept<T>(T visitor)
+        T IVisitable.Accept<T>(T visitor)
         {
             visitor.Visit(value);
+
+            return visitor;
         }
 
         bool IEquatable<IAddress>.Equals(IAddress other)
         {
-            var visitor = new ValueVisitor();
-
-            other.Accept(visitor);
+            var visitor = other.Accept(new ValueVisitor());
 
             if (!visitor.Result.Success)
             {
@@ -93,9 +93,7 @@ namespace Attractor.Implementation
 
             bool IAddressPolicy.IsMatch(IAddress address)
             {
-                var visitor = new ValueVisitor();
-
-                address.Accept(visitor);
+                var visitor = address.Accept(new ValueVisitor());
 
                 if (!visitor.Result.Success)
                 {
@@ -113,18 +111,18 @@ namespace Attractor.Implementation
                 switch (value)
                 {
                     case byte[] array:
-                        Result = TryResult<ReadOnlyMemory<byte>>.True(array);
+                        Result = Try<ReadOnlyMemory<byte>>.True(array);
                         break;
                     case ReadOnlyMemory<byte> readOnlyMemory:
-                        Result = TryResult<ReadOnlyMemory<byte>>.True(readOnlyMemory);
+                        Result = Try<ReadOnlyMemory<byte>>.True(readOnlyMemory);
                         break;
                     case Memory<byte> memory:
-                        Result = TryResult<ReadOnlyMemory<byte>>.True(memory);
+                        Result = Try<ReadOnlyMemory<byte>>.True(memory);
                         break;
                 }
             }
 
-            public TryResult<ReadOnlyMemory<byte>> Result { get; private set; }
+            public Try<ReadOnlyMemory<byte>> Result { get; private set; }
         }
     }
 }

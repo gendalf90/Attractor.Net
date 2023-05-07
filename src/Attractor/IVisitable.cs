@@ -2,6 +2,6 @@
 {
     public interface IVisitable
     {
-        void Accept<T>(T visitor) where T : IVisitor;
+        T Accept<T>(T visitor) where T : IVisitor;
     }
 }

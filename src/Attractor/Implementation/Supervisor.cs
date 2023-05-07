@@ -6,69 +6,25 @@ namespace Attractor.Implementation
 {
     public static class Supervisor
     {
-        private static readonly Stub stub = new();
-
-        public static ISupervisorDecorator FromStrategy(
-            Func<Func<IContext, Exception, CancellationToken, ValueTask>, IContext, Exception, CancellationToken, ValueTask> onFault = null)
-        {
-            return new Decorator(onFault);
-        }
-
         public static ISupervisor FromStrategy(
-            Func<IContext, Exception, CancellationToken, ValueTask> onFault = null)
+            Func<IContext, Exception, CancellationToken, ValueTask> onProcessed = null,
+            Func<IContext, CancellationToken, ValueTask> onStopped = null)
         {
-            return new Instance(onFault);
+            return new StrategySupervisor(onProcessed, onStopped);
         }
 
-        public static ISupervisor Empty()
+        private record StrategySupervisor(
+            Func<IContext, Exception, CancellationToken, ValueTask> OnProcessed = null,
+            Func<IContext, CancellationToken, ValueTask> OnStopped = null) : ISupervisor
         {
-            return stub;
-        }
-
-        private class Decorator : ISupervisorDecorator
-        {
-            private readonly Func<Func<IContext, Exception, CancellationToken, ValueTask>, IContext, Exception, CancellationToken, ValueTask> onFault;
-
-            private ISupervisor value;
-
-            public Decorator(
-                Func<Func<IContext, Exception, CancellationToken, ValueTask>, IContext, Exception, CancellationToken, ValueTask> onFault)
+            ValueTask ISupervisor.OnProcessedAsync(IContext context, Exception error, CancellationToken token)
             {
-                this.onFault = onFault;
+                return OnProcessed != null ? OnProcessed(context, error, token) : default;
             }
 
-            void IDecorator<ISupervisor>.Decorate(ISupervisor value)
+            ValueTask ISupervisor.OnStoppedAsync(IContext context, CancellationToken token)
             {
-                this.value = value;
-            }
-
-            ValueTask ISupervisor.OnFaultAsync(IContext context, Exception exception, CancellationToken token)
-            {
-                return onFault != null ? onFault(value.OnFaultAsync, context, exception, token) : value.OnFaultAsync(context, exception, token);
-            }
-        }
-
-        private class Instance : ISupervisor
-        {
-            private readonly Func<IContext, Exception, CancellationToken, ValueTask> onFault;
-
-            public Instance(
-                Func<IContext, Exception, CancellationToken, ValueTask> onFault)
-            {
-                this.onFault = onFault;
-            }
-
-            ValueTask ISupervisor.OnFaultAsync(IContext context, Exception exception, CancellationToken token)
-            {
-                return onFault != null ? onFault(context, exception, token) : default;
-            }
-        }
-        
-        private class Stub : ISupervisor
-        {
-            ValueTask ISupervisor.OnFaultAsync(IContext context, Exception exception, CancellationToken token)
-            {
-                return ValueTask.CompletedTask;
+                return OnStopped != null ? OnStopped(context, token) : default;
             }
         }
     }

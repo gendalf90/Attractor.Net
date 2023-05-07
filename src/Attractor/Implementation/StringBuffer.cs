@@ -16,16 +16,16 @@ namespace Attractor.Implementation
             return new AddressPolicy(predicate);
         }
 
-        void IVisitable.Accept<T>(T visitor)
+        T IVisitable.Accept<T>(T visitor)
         {
             visitor.Visit(value);
+
+            return visitor;
         }
 
         public bool Equals(IAddress other)
         {
-            var visitor = new ValueVisitor();
-
-            other.Accept(visitor);
+            var visitor = other.Accept(new ValueVisitor());
 
             if (!visitor.Result.Success)
             {
@@ -56,9 +56,7 @@ namespace Attractor.Implementation
 
             bool IAddressPolicy.IsMatch(IAddress address)
             {
-                var visitor = new ValueVisitor();
-
-                address.Accept(visitor);
+                var visitor = address.Accept(new ValueVisitor());
 
                 if (!visitor.Result.Success)
                 {
@@ -75,11 +73,11 @@ namespace Attractor.Implementation
             {
                 if (value is string str)
                 {
-                    Result = TryResult<string>.True(str);
+                    Result = Try<string>.True(str);
                 }
             }
 
-            public TryResult<string> Result { get; private set; }
+            public Try<string> Result { get; private set; }
         }
     }
 }

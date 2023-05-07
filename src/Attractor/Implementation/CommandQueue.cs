@@ -5,7 +5,8 @@ namespace Attractor.Implementation
 {
     internal sealed class CommandQueue : Particle
     {
-        private readonly ConcurrentQueue<ICommand> queue = new();
+        //private readonly ConcurrentQueue<ICommand> queue = new();
+        private readonly LinkedQueue<ICommand> queue = new();
 
         public void Schedule(ICommand command)
         {
@@ -18,7 +19,14 @@ namespace Attractor.Implementation
         {
             while (queue.TryDequeue(out var command))
             {
-                await command.ExecuteAsync();
+                try
+                {
+                    await command.ExecuteAsync();
+                }
+                catch
+                {
+                    continue;
+                }
             }
         }
     }
