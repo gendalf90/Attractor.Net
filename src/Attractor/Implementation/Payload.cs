@@ -1,64 +1,51 @@
-using System;
-
 namespace Attractor.Implementation
 {
     public static class Payload
     {
-        private static readonly EmptyBuffer instance = new();
-        
-        public static IPayload FromString(string value)
+        private static readonly EmptyPayload empty = new();
+
+        public static IPayload From<T>(T value)
         {
-            return new StringBuffer(value);
+            return new TypedPayload<T>(value);
         }
 
-        public static IPayload FromBytes(ReadOnlyMemory<byte> value)
+        public static bool Match<T>(IPayload payload)
         {
-            return new BytesBuffer(value);
-        }
+            var visitor = new MatchTypeVisitor<T>();
+            
+            payload.Accept(visitor);
 
-        public static IPayload FromType<T>(T value)
-        {
-            return new TypedBuffer<T>(value);
-        }
-
-        public static bool MatchType<T>(IPayload payload)
-        {
-            var result = payload.Accept(new MatchTypeVisitor<T>());
-
-            return result.IsMatch;
+            return visitor.IsMatch;
         }
 
         public static IPayload Empty()
         {
-            return instance;
+            return empty;
         }
 
-        private class EmptyBuffer : IPayload
+        private class EmptyPayload : IPayload
         {
-            T IVisitable.Accept<T>(T visitor)
+            void IVisitable.Accept<T>(T visitor)
             {
-                return visitor;
             }
         }
 
-        private class TypedBuffer<T> : IPayload
+        private class TypedPayload<TType> : IPayload
         {
-            private readonly T value;
+            private readonly TType value;
 
-            public TypedBuffer(T value)
+            public TypedPayload(TType value)
             {
                 this.value = value;
             }
 
-            TVisitor IVisitable.Accept<TVisitor>(TVisitor visitor)
+            void IVisitable.Accept<TVisitor>(TVisitor visitor)
             {
                 visitor.Visit(value);
-
-                return visitor;
             }
         }
 
-        private struct MatchTypeVisitor<TType> : IVisitor
+        private class MatchTypeVisitor<TType> : IVisitor
         {
             public void Visit<TValue>(TValue value)
             {

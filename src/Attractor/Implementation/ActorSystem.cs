@@ -11,6 +11,7 @@ namespace Attractor.Implementation
         {
             Context.Cache<IAddress>();
             Context.Cache<IPayload>();
+            Context.Cache<IActorSystem>();
             Context.Cache<ISupervisor>();
         }
         
@@ -30,13 +31,13 @@ namespace Attractor.Implementation
             return new ActorSystem(token);
         }
 
-        async ValueTask<Try<IActorRef>> IActorSystem.TryGetRefAsync(IAddress address)
+        async ValueTask<IActorRef> IActorSystem.GetRefAsync(IAddress address)
         {
             var process = await GetOrCreateProcessAsync(address);
 
             return process == null 
-                ? Try<IActorRef>.False() 
-                : Try<IActorRef>.True(new ActorRef(this, process, address));
+                ? null
+                : new ActorRef(this, process, address);
         }
 
         void IActorSystem.Register(IAddressPolicy policy, Action<IActorBuilder> configuration)
@@ -128,6 +129,7 @@ namespace Attractor.Implementation
 
                 context.Set(Address);
                 context.Set(payload);
+                context.Set<IActorSystem>(System);
                 
                 configuration?.Invoke(context);
 
@@ -185,7 +187,7 @@ namespace Attractor.Implementation
                     return false;
                 }
 
-                if (!Payload.MatchType<StoppingMessage>(payload))
+                if (!Payload.Match<StoppingMessage>(payload))
                 {
                     return false;
                 }

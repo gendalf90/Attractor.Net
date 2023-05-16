@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
-    internal sealed class CommandQueue : Particle
+    internal sealed class CommandQueue : Dispatcher
     {
         //private readonly ConcurrentQueue<ICommand> queue = new();
         private readonly LinkedQueue<ICommand> queue = new();

@@ -25,6 +25,8 @@ namespace Attractor.Implementation
 
         async ValueTask<IAsyncDisposable> ISemaphore.AcquireAsync(CancellationToken token)
         {
+            token.ThrowIfCancellationRequested();
+            
             if (Interlocked.Increment(ref counter) <= limit)
             {
                 return new Releaser(this);

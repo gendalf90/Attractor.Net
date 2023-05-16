@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
-    internal abstract class Particle : IThreadPoolWorkItem
+    internal abstract class Dispatcher : IThreadPoolWorkItem
     {
         private const long LockValue = 1;
         private const long UnlockValue = 0;

@@ -5,7 +5,7 @@ namespace Attractor
 {
     public interface IActorSystem
     {
-        ValueTask<Try<IActorRef>> TryGetRefAsync(IAddress address);
+        ValueTask<IActorRef> GetRefAsync(IAddress address);
 
         void Register(IAddressPolicy policy, Action<IActorBuilder> configuration = null);
     }

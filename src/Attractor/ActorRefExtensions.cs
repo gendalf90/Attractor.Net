@@ -1,18 +1,12 @@
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 using Attractor.Implementation;
 
 namespace Attractor
 {
     public static class ActorRefExtensions
     {
-        public static void Stop(this IActorRef actorRef)
-        {
-            ArgumentNullException.ThrowIfNull(actorRef, nameof(actorRef));
-            
-            actorRef.Send(Payload.FromType(StoppingMessage.Instance));
-        }
-
         public static IActorRef WithSendingTimeout(this IActorRef actorRef, TimeSpan timeout, CancellationToken token = default)
         {
             ArgumentNullException.ThrowIfNull(actorRef, nameof(actorRef));
@@ -113,7 +107,7 @@ namespace Attractor
                         isStopped = true;
 
                         cancellationRegistration.Dispose();
-                        actorRef.Stop();
+                        actorRef.Send(StoppingMessage.Instance);
                     }
                     else
                     {
@@ -167,7 +161,7 @@ namespace Attractor
 
                 if (current == limit)
                 {
-                    actorRef.Stop();
+                    actorRef.Send(StoppingMessage.Instance);
                 }
             }
         }
@@ -248,7 +242,7 @@ namespace Attractor
 
                     cancellationRegistration.Dispose();
                     timeoutSource.Dispose();
-                    actorRef.Stop();
+                    actorRef.Send(StoppingMessage.Instance);
                 }
                 finally
                 {
@@ -267,6 +261,59 @@ namespace Attractor
 
                 return result;
             }
+        }
+
+        public static async ValueTask SendAsync(this IActorRef actorRef, IPayload payload, Action<IContext> configuration = null, CancellationToken token = default)
+        {
+            var completion = new TaskCompletionSource();
+
+            void supervisorConfiguration(IContext context)
+            {
+                configuration?.Invoke(context);
+
+                var supervisor = context.Get<ISupervisor>();
+
+                context.Set(Supervisor.FromStrategy(
+                    async (context, error, token) =>
+                    {
+                        try
+                        {
+                            if (supervisor != null)
+                            {
+                                await supervisor.OnProcessedAsync(context, error, token);
+                            }
+                        }
+                        finally
+                        {
+                            if (error == null)
+                            {
+                                completion.SetResult();
+                            }
+                            else
+                            {
+                                completion.SetException(error);
+                            }
+                        }
+                    },
+                    async (context, token) =>
+                    {
+                        try
+                        {
+                            if (supervisor != null)
+                            {
+                                await supervisor.OnStoppedAsync(context, token);
+                            }
+                        }
+                        finally
+                        {
+                            completion.SetResult();
+                        }
+                    }));
+            }
+
+            actorRef.Send(payload, supervisorConfiguration);
+
+            await completion.Task.WaitAsync(token);
         }
     }
 }
