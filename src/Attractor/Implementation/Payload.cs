@@ -4,18 +4,14 @@ namespace Attractor.Implementation
     {
         private static readonly EmptyPayload empty = new();
 
-        public static IPayload From<T>(T value)
+        public static IPayload FromString(string value)
         {
-            return new TypedPayload<T>(value);
+            return new TypedPayload<string>(value);
         }
 
-        public static bool Match<T>(IPayload payload)
+        public static IPayload FromBytes(params byte[] value)
         {
-            var visitor = new MatchTypeVisitor<T>();
-            
-            payload.Accept(visitor);
-
-            return visitor.IsMatch;
+            return new TypedPayload<byte[]>(value);
         }
 
         public static IPayload Empty()
@@ -43,19 +39,6 @@ namespace Attractor.Implementation
             {
                 visitor.Visit(value);
             }
-        }
-
-        private class MatchTypeVisitor<TType> : IVisitor
-        {
-            public void Visit<TValue>(TValue value)
-            {
-                if (typeof(TValue) == typeof(TType))
-                {
-                    IsMatch = true;
-                }
-            }
-
-            public bool IsMatch { get; private set; }
         }
     }
 }

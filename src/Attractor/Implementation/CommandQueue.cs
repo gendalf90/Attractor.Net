@@ -5,8 +5,7 @@ namespace Attractor.Implementation
 {
     internal sealed class CommandQueue : Dispatcher
     {
-        //private readonly ConcurrentQueue<ICommand> queue = new();
-        private readonly LinkedQueue<ICommand> queue = new();
+        private readonly ConcurrentQueue<ICommand> queue = new();
 
         public void Schedule(ICommand command)
         {

@@ -137,7 +137,7 @@ namespace Attractor.Implementation
             }
         }
 
-        private class ActorProcess
+        private class ActorProcess : IVisitor
         {
             private readonly CommandQueue commands = new();
 
@@ -159,17 +159,20 @@ namespace Attractor.Implementation
             {   
                 commands.Schedule(new StrategyCommand(async () =>
                 {
-                    if (await TryStopAsync(context))
+                    using (Context.Use(context))
                     {
-                        return;
-                    }
+                        if (await TryStopAsync(context))
+                        {
+                            return;
+                        }
 
-                    if (await TrySendToNextProcessAsync(context))
-                    {
-                        return;
+                        if (await TrySendToNextProcessAsync(context))
+                        {
+                            return;
+                        }
+                        
+                        await ProcessAsync(context);
                     }
-                    
-                    await ProcessAsync(context);
                 }));
             }
 
@@ -187,7 +190,9 @@ namespace Attractor.Implementation
                     return false;
                 }
 
-                if (!Payload.Match<StoppingMessage>(payload))
+                payload.Accept(this);
+
+                if (!isStopped)
                 {
                     return false;
                 }
@@ -195,8 +200,6 @@ namespace Attractor.Implementation
                 using (Disposable.Create(() => system.RemoveProcess(address)))
                 await using (actor)
                 {
-                    isStopped = true;
-
                     var supervisor = context.Get<ISupervisor>();
 
                     if (supervisor != null)
@@ -244,6 +247,14 @@ namespace Attractor.Implementation
                     {
                         await supervisor.OnProcessedAsync(context, error, system.token);
                     }
+                }
+            }
+
+            void IVisitor.Visit<T>(T value)
+            {
+                if (value is StoppingMessage)
+                {
+                    isStopped = true;
                 }
             }
         }

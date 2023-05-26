@@ -6,6 +6,9 @@ namespace Attractor.Implementation
 {
     public static class Context
     {
+        private static readonly AsyncLocal<IContext> local = new();
+        private static readonly IDisposable disposing = Disposable.Create(() => local.Value = null);
+        
         public static IContext Default()
         {
             return new CachedTypesDecorator(new DictionaryContext());
@@ -14,6 +17,15 @@ namespace Attractor.Implementation
         public static void Cache<T>()
         {
             CachedTypesDecorator.IndexOf<T>.Initialize();
+        }
+
+        public static IContext Current => local.Value;
+
+        internal static IDisposable Use(IContext context)
+        {
+            local.Value = context;
+
+            return disposing;
         }
 
         private class DictionaryContext : IContext
