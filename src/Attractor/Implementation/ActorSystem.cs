@@ -31,13 +31,9 @@ namespace Attractor.Implementation
             return new ActorSystem(token);
         }
 
-        async ValueTask<IActorRef> IActorSystem.GetRefAsync(IAddress address)
+        IActorRef IActorSystem.Refer(IAddress address)
         {
-            var process = await GetOrCreateProcessAsync(address);
-
-            return process == null 
-                ? null
-                : new ActorRef(this, process, address);
+            return new ActorRef(this, address);
         }
 
         void IActorSystem.Register(IAddressPolicy policy, Action<IActorBuilder> configuration)
@@ -52,7 +48,7 @@ namespace Attractor.Implementation
             }));
         }
 
-        private async ValueTask<ActorProcess> GetOrCreateProcessAsync(IAddress address)
+        private Task<ActorProcess> GetOrCreateProcessAsync(IAddress address)
         {
             var completion = new TaskCompletionSource<ActorProcess>();
 
@@ -68,7 +64,7 @@ namespace Attractor.Implementation
                 }
             }));
 
-            return await completion.Task;
+            return completion.Task;
         }
 
         private record TryBuildProcessCommand(
@@ -87,7 +83,7 @@ namespace Attractor.Implementation
                     }
                     else if (Node == null)
                     {
-                        Completion.SetResult(null);
+                        Completion.SetException(new InvalidOperationException());
                     }
                     else if (Node.Value.TryBuildProcess(Address, out var process))
                     {
@@ -117,23 +113,80 @@ namespace Attractor.Implementation
             }));
         }
 
-        private record ActorRef(ActorSystem System, ActorProcess Process, IAddress Address) : IActorRef
+        private class ActorRef : IActorRef
         {
-            void IActorRef.Send(IPayload payload, Action<IContext> configuration)
+            private readonly object sync = new();
+            
+            private readonly ActorSystem system;
+            private readonly IAddress address;
+            
+            private IActorRef state;
+
+            public ActorRef(ActorSystem system, IAddress address)
             {
-                ArgumentNullException.ThrowIfNull(payload, nameof(payload));
-                
-                System.token.ThrowIfCancellationRequested();
-                
-                var context = Context.Default();
+                this.system = system;
+                this.address = address;
+            }
+            
+            ValueTask IActorRef.PostAsync(IPayload payload, Action<IContext> configuration, CancellationToken token)
+            {
+                var current = state;
 
-                context.Set(Address);
-                context.Set(payload);
-                context.Set<IActorSystem>(System);
+                if (current == null)
+                {
+                    lock (sync)
+                    {
+                        current = state ??= new State(this, system.GetOrCreateProcessAsync(address));
+                    }
+                }
                 
-                configuration?.Invoke(context);
+                return current.PostAsync(payload, configuration, token);
+            }
 
-                Process.Send(context);
+            private class State : IActorRef
+            {
+                private readonly ActorRef parent;
+                private readonly Task<ActorProcess> promise;
+
+                private bool stopped;
+
+                public State(ActorRef parent, Task<ActorProcess> promise)
+                {
+                    this.parent = parent;
+                    this.promise = promise;
+                }
+
+                async ValueTask IActorRef.PostAsync(IPayload payload, Action<IContext> configuration, CancellationToken token)
+                {
+                    ArgumentNullException.ThrowIfNull(payload, nameof(payload));
+                
+                    parent.system.token.ThrowIfCancellationRequested();
+
+                    var context = Context.Default();
+
+                    context.Set(parent.address);
+                    context.Set(payload);
+                    context.Set<IActorSystem>(parent.system);
+                    
+                    configuration?.Invoke(context);
+
+                    var process = await promise.WaitAsync(token);
+
+                    process.Send(context, () =>
+                    {
+                        if (stopped)
+                        {
+                            return;
+                        }
+
+                        stopped = true;
+
+                        lock (parent.sync)
+                        {
+                            parent.state = null;
+                        }
+                    });
+                }
             }
         }
 
@@ -155,18 +208,18 @@ namespace Attractor.Implementation
                 this.address = address;
             }
 
-            public void Send(IContext context)
+            public void Send(IContext context, Action onStopped = null)
             {   
                 commands.Schedule(new StrategyCommand(async () =>
                 {
                     using (Context.Use(context))
                     {
-                        if (await TryStopAsync(context))
+                        if (await TryStopAsync(context, onStopped))
                         {
                             return;
                         }
 
-                        if (await TrySendToNextProcessAsync(context))
+                        if (await TrySendToNextProcessAsync(context, onStopped))
                         {
                             return;
                         }
@@ -176,7 +229,7 @@ namespace Attractor.Implementation
                 }));
             }
 
-            private async ValueTask<bool> TryStopAsync(IContext context)
+            private async ValueTask<bool> TryStopAsync(IContext context, Action onStopped)
             {
                 if (isStopped)
                 {
@@ -197,6 +250,7 @@ namespace Attractor.Implementation
                     return false;
                 }
 
+                using (Disposable.Create(() => onStopped?.Invoke()))
                 using (Disposable.Create(() => system.RemoveProcess(address)))
                 await using (actor)
                 {
@@ -211,12 +265,14 @@ namespace Attractor.Implementation
                 }
             }
 
-            private async ValueTask<bool> TrySendToNextProcessAsync(IContext context)
+            private async ValueTask<bool> TrySendToNextProcessAsync(IContext context, Action onStopped)
             {
                 if (!isStopped)
                 {
                     return false;
                 }
+
+                onStopped?.Invoke();
 
                 next ??= await system.GetOrCreateProcessAsync(address);
 

@@ -30,23 +30,9 @@ namespace Attractor.Implementation
 
         private class DictionaryContext : IContext
         {
-            private readonly Dictionary<Type, object> values;
+            private readonly Dictionary<Type, object> values = new();
 
-            public DictionaryContext(Dictionary<Type, object> values)
-            {
-                this.values = values;
-            }
-
-            public DictionaryContext() : this(new())
-            {
-            }
-
-            public IContext Clone()
-            {
-                return new DictionaryContext(new(values));
-            }
-
-            public T Get<T>() where T : class
+            T IContext.Get<T>()
             {
                 if (values.TryGetValue(typeof(T), out var result))
                 {
@@ -56,7 +42,7 @@ namespace Attractor.Implementation
                 return null;
             }
 
-            public void Set<T>(T value) where T : class
+            void IContext.Set<T>(T value)
             {
                 if (value == null)
                 {
@@ -101,7 +87,7 @@ namespace Attractor.Implementation
                 return true;
             }
 
-            public T Get<T>() where T : class
+            T IContext.Get<T>()
             {
                 if (TryGetFromCached<T>(out var result))
                 {
@@ -128,24 +114,12 @@ namespace Attractor.Implementation
                 return true;
             }
 
-            public void Set<T>(T value) where T : class
+            void IContext.Set<T>(T value)
             {
                 if (!TrySetToCached(value))
                 {
                     context.Set(value);
                 }
-            }
-
-            public IContext Clone()
-            {
-                var result = new CachedTypesDecorator(context.Clone());
-
-                for (int i = 0; i < values.Length; i++)
-                {
-                    result.values[i] = values[i];
-                }
-
-                return result;
             }
 
             public static class IndexOf<T>

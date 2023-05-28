@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Attractor.Implementation;
@@ -7,259 +8,74 @@ namespace Attractor
 {
     public static class ActorRefExtensions
     {
-        public static IActorRef WithSendingTimeout(this IActorRef actorRef, TimeSpan timeout, CancellationToken token = default)
+        public static IActorRef WithSendingTimeout(this IActorRef actorRef, TimeSpan timeout, bool started = false, CancellationToken token = default)
         {
             ArgumentNullException.ThrowIfNull(actorRef, nameof(actorRef));
             
-            return SendingTimeoutDecorator.Start(timeout, actorRef, token);
+            return new SendingTimeoutDecorator(timeout, actorRef, started, token);
         }
 
         private class SendingTimeoutDecorator : IActorRef
         {
-            private readonly ReaderWriterLockSlim sync = new();
+            private readonly CommandQueue commands = new();
+            private readonly Stopwatch timer = new();
 
             private readonly IActorRef actorRef;
             private readonly TimeSpan timeout;
-            private readonly CancellationToken cancellationToken;
+            private readonly CancellationToken cancellation;
 
-            private CancellationTokenRegistration cancellationRegistration;
-            private long lastProcessedTime;
-            private volatile bool isStopped;
-            private volatile Timer timeoutTimer;
-
-            private SendingTimeoutDecorator(TimeSpan timeout, IActorRef actorRef, CancellationToken cancellationToken)
+            public SendingTimeoutDecorator(TimeSpan timeout, IActorRef actorRef, bool started, CancellationToken cancellation)
             {
                 this.timeout = timeout;
                 this.actorRef = actorRef;
-                this.cancellationToken = cancellationToken;
+                this.cancellation = cancellation;
+
+                if (started)
+                {
+                    Start(timeout);
+                    timer.Start();
+                }
             }
 
-            void IActorRef.Send(IPayload payload, Action<IContext> configuration)
+            async ValueTask IActorRef.PostAsync(IPayload payload, Action<IContext> configuration, CancellationToken token)
             {
-                sync.EnterReadLock();
-
                 try
                 {
-                    if (isStopped)
-                    {
-                        throw new TimeoutException();
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
-                    
-                    actorRef.Send(payload, configuration);
+                    await actorRef.PostAsync(payload, configuration, token);
                 }
                 finally
                 {
-                    Interlocked.Exchange(ref lastProcessedTime, DateTime.Now.Ticks);
-                    
-                    sync.ExitReadLock();
-                }
-            }
-
-            public static SendingTimeoutDecorator Start(TimeSpan timeout, IActorRef actorRef, CancellationToken token)
-            {
-                var result = new SendingTimeoutDecorator(timeout, actorRef, token)
-                {
-                    lastProcessedTime = DateTime.Now.Ticks
-                };
-
-                result.timeoutTimer = new Timer(result.OnTimeout, null, timeout, Timeout.InfiniteTimeSpan);
-                result.cancellationRegistration = token.Register(result.OnCancel);
-
-                return result;
-            }
-
-            private void OnCancel()
-            {
-                sync.EnterWriteLock();
-
-                try
-                {
-                    timeoutTimer.Dispose();
-                    cancellationRegistration.Dispose();
-                }
-                finally
-                {
-                    sync.ExitWriteLock();
-                }
-            }
-
-            private void OnTimeout(object state)
-            {
-                sync.EnterWriteLock();
-
-                try
-                {
-                    if (cancellationToken.IsCancellationRequested)
+                    commands.Schedule(new StrategyCommand(() =>
                     {
-                        return;
-                    }
+                        if (!timer.IsRunning)
+                        {
+                            Start(timeout);
+                        }
 
-                    timeoutTimer.Dispose();
-                    
-                    var currentTime = TimeSpan.FromTicks(DateTime.Now.Ticks);
-                    var currentLastProcessedTime = TimeSpan.FromTicks(Interlocked.Read(ref lastProcessedTime));
-                    var diff = currentTime - currentLastProcessedTime;
+                        timer.Restart();
+                    }));
+                }
+            }
 
-                    if (diff >= timeout)
+            private void Start(TimeSpan delay)
+            {
+                Task.Delay(delay, cancellation).ContinueWith((_) =>
+                {
+                    commands.Schedule(new StrategyCommand(async () =>
                     {
-                        isStopped = true;
+                        timer.Stop();
 
-                        cancellationRegistration.Dispose();
-                        actorRef.Send(StoppingMessage.Instance);
-                    }
-                    else
-                    {
-                        timeoutTimer = new Timer(OnTimeout, null, timeout - diff, Timeout.InfiniteTimeSpan);
-                    }
-                }
-                finally
-                {
-                    sync.ExitWriteLock();
-                }
-            }
-        }
-
-        public static IActorRef WithSendingLimit(this IActorRef actorRef, int limit)
-        {
-            ArgumentNullException.ThrowIfNull(actorRef, nameof(actorRef));
-
-            if (limit <= 0)
-            {
-                throw new ArgumentOutOfRangeException(nameof(limit));
-            }
-            
-            return new SendingLimitDecorator(actorRef, limit);
-        }
-
-        private class SendingLimitDecorator : IActorRef
-        {
-            private readonly IActorRef actorRef;
-            private readonly int limit;
-
-            private int count;
-
-            public SendingLimitDecorator(IActorRef actorRef, int limit)
-            {
-                this.actorRef = actorRef;
-                this.limit = limit;
-            }
-
-            void IActorRef.Send(IPayload payload, Action<IContext> configuration)
-            {
-                var current = Interlocked.Increment(ref count);
-                
-                if (current > limit)
-                {
-                    throw new ArgumentOutOfRangeException(nameof(payload));
-                }
-                else
-                {
-                    actorRef.Send(payload, configuration);
-                }
-
-                if (current == limit)
-                {
-                    actorRef.Send(StoppingMessage.Instance);
-                }
-            }
-        }
-
-        public static IActorRef WithTtl(this IActorRef actorRef, TimeSpan ttl, CancellationToken token = default)
-        {
-            ArgumentNullException.ThrowIfNull(actorRef, nameof(actorRef));
-
-            return TtlDecorator.Start(actorRef, ttl, token);
-        }
-
-        private class TtlDecorator : IActorRef
-        {
-            private readonly ReaderWriterLockSlim sync = new();
-            
-            private readonly IActorRef actorRef;
-            private readonly CancellationToken cancellationToken;
-            private readonly CancellationTokenSource timeoutSource;
-
-            private CancellationTokenRegistration cancellationRegistration;
-            private volatile bool isStopped;
-
-            private TtlDecorator(IActorRef actorRef, CancellationTokenSource timeoutSource, CancellationToken cancellationToken)
-            {
-                this.actorRef = actorRef;
-                this.cancellationToken = cancellationToken;
-                this.timeoutSource = timeoutSource;
-            }
-
-            void IActorRef.Send(IPayload payload, Action<IContext> configuration)
-            {
-                sync.EnterReadLock();
-
-                try
-                {
-                    if (isStopped)
-                    {
-                        throw new TimeoutException();
-                    }
-                    
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    actorRef.Send(payload, configuration);
-                }
-                finally
-                {
-                    sync.ExitReadLock();
-                }
-            }
-
-            private void OnCancel()
-            {
-                sync.EnterWriteLock();
-
-                try
-                {
-                    cancellationRegistration.Dispose();
-                    timeoutSource.Dispose();
-                }
-                finally
-                {
-                    sync.ExitWriteLock();
-                }
-            }
-
-            private void OnTimeout()
-            {
-                sync.EnterWriteLock();
-
-                try
-                {
-                    if (cancellationToken.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
-                    isStopped = true;
-
-                    cancellationRegistration.Dispose();
-                    timeoutSource.Dispose();
-                    actorRef.Send(StoppingMessage.Instance);
-                }
-                finally
-                {
-                    sync.ExitWriteLock();
-                }
-            }
-
-            public static TtlDecorator Start(IActorRef actorRef, TimeSpan ttl, CancellationToken token)
-            {
-                var source = new CancellationTokenSource(ttl);
-                var result = new TtlDecorator(actorRef, source, token);
-
-                result.cancellationRegistration = token.Register(result.OnCancel);
-
-                source.Token.Register(result.OnTimeout);
-
-                return result;
+                        if (timer.Elapsed >= timeout)
+                        {
+                            await actorRef.PostAsync(StoppingMessage.Instance, null, cancellation);
+                        }
+                        else
+                        {
+                            Start(timeout - timer.Elapsed);
+                            timer.Start();
+                        }
+                    }));
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
             }
         }
 
@@ -311,8 +127,8 @@ namespace Attractor
                     }));
             }
 
-            actorRef.Send(payload, supervisorConfiguration);
-
+            await actorRef.PostAsync(payload, supervisorConfiguration, token);
+            
             await completion.Task.WaitAsync(token);
         }
     }

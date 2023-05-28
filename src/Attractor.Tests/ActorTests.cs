@@ -21,7 +21,7 @@ namespace Attractor.Tests
             });
         
             // Act
-            var actorRef = await system.GetRefAsync(Address.FromString("test"));
+            var actorRef = system.Refer(Address.FromString("test"));
 
             await actorRef.SendAsync(Payload.FromString(message));
         

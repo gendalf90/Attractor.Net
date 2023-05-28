@@ -1,6 +1,6 @@
 ﻿namespace Attractor
 {
-    public interface IContext : ICloneable<IContext>
+    public interface IContext
     {
         void Set<T>(T value) where T : class;
 
