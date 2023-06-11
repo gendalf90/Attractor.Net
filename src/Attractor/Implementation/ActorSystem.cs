@@ -7,17 +7,9 @@ namespace Attractor.Implementation
 {
     public sealed class ActorSystem : IActorSystem
     {
-        static ActorSystem()
-        {
-            Context.Cache<IAddress>();
-            Context.Cache<IPayload>();
-            Context.Cache<IActorSystem>();
-            Context.Cache<ISupervisor>();
-        }
-        
         private readonly Dictionary<IAddress, ActorProcess> processes = new(AddressEqualityComparer.Default);
         private readonly LinkedList<ActorProcessBuilder> builders = new();
-        private readonly CommandQueue commands = new();
+        private readonly CommandQueue<ICommand> commands = new();
 
         private readonly CancellationToken token;
 
@@ -44,7 +36,7 @@ namespace Attractor.Implementation
 
             commands.Schedule(new StrategyCommand(() =>
             {
-                builders.AddLast(builder);
+                builders.AddFirst(builder);
             }));
         }
 
@@ -128,7 +120,7 @@ namespace Attractor.Implementation
                 this.address = address;
             }
             
-            ValueTask IActorRef.PostAsync(IPayload payload, Action<IContext> configuration, CancellationToken token)
+            ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
             {
                 var current = state;
 
@@ -140,13 +132,14 @@ namespace Attractor.Implementation
                     }
                 }
                 
-                return current.PostAsync(payload, configuration, token);
+                return current.PostAsync(context, token);
             }
 
             private class State : IActorRef
             {
                 private readonly ActorRef parent;
                 private readonly Task<ActorProcess> promise;
+                private readonly Action onProcessStopped;
 
                 private bool stopped;
 
@@ -154,25 +147,8 @@ namespace Attractor.Implementation
                 {
                     this.parent = parent;
                     this.promise = promise;
-                }
 
-                async ValueTask IActorRef.PostAsync(IPayload payload, Action<IContext> configuration, CancellationToken token)
-                {
-                    ArgumentNullException.ThrowIfNull(payload, nameof(payload));
-                
-                    parent.system.token.ThrowIfCancellationRequested();
-
-                    var context = Context.Default();
-
-                    context.Set(parent.address);
-                    context.Set(payload);
-                    context.Set<IActorSystem>(parent.system);
-                    
-                    configuration?.Invoke(context);
-
-                    var process = await promise.WaitAsync(token);
-
-                    process.Send(context, () =>
+                    onProcessStopped = () =>
                     {
                         if (stopped)
                         {
@@ -185,14 +161,28 @@ namespace Attractor.Implementation
                         {
                             parent.state = null;
                         }
-                    });
+                    };
+                }
+
+                async ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
+                {
+                    ArgumentNullException.ThrowIfNull(context, nameof(context));
+                
+                    parent.system.token.ThrowIfCancellationRequested();
+
+                    context.Set(parent.address);
+                    context.Set<IActorSystem>(parent.system);
+
+                    var process = await promise.WaitAsync(token);
+
+                    process.Send(context, onProcessStopped);
                 }
             }
         }
 
         private class ActorProcess : IVisitor
         {
-            private readonly CommandQueue commands = new();
+            private readonly CommandQueue<ProcessMessageCommand> commands = new();
 
             private readonly ActorSystem system;
             private readonly IActor actor;
@@ -210,23 +200,41 @@ namespace Attractor.Implementation
 
             public void Send(IContext context, Action onStopped = null)
             {   
-                commands.Schedule(new StrategyCommand(async () =>
+                commands.Schedule(new ProcessMessageCommand
                 {
-                    using (Context.Use(context))
-                    {
-                        if (await TryStopAsync(context, onStopped))
-                        {
-                            return;
-                        }
+                    Process = this,
+                    Context = context,
+                    OnStopped = onStopped
+                });
+            }
 
-                        if (await TrySendToNextProcessAsync(context, onStopped))
-                        {
-                            return;
-                        }
-                        
-                        await ProcessAsync(context);
-                    }
-                }));
+            private readonly struct ProcessMessageCommand : ICommand
+            {
+                public ActorProcess Process { get; init; }
+                
+                public IContext Context { get; init; }
+
+                public Action OnStopped { get; init; }
+                
+                ValueTask ICommand.ExecuteAsync()
+                {
+                    return Process.ReceiveAsync(Context, OnStopped);
+                }
+            }
+
+            private async ValueTask ReceiveAsync(IContext context, Action onStopped)
+            {
+                if (await TryStopAsync(context, onStopped))
+                {
+                    return;
+                }
+
+                if (await TrySendToNextProcessAsync(context, onStopped))
+                {
+                    return;
+                }
+                
+                await ProcessAsync(context);
             }
 
             private async ValueTask<bool> TryStopAsync(IContext context, Action onStopped)
@@ -250,6 +258,13 @@ namespace Attractor.Implementation
                     return false;
                 }
 
+                await ClearAsync(context, onStopped);
+
+                return true;
+            }
+
+            private async ValueTask ClearAsync(IContext context, Action onStopped)
+            {
                 using (Disposable.Create(() => onStopped?.Invoke()))
                 using (Disposable.Create(() => system.RemoveProcess(address)))
                 await using (actor)
@@ -260,8 +275,6 @@ namespace Attractor.Implementation
                     {
                         await supervisor.OnStoppedAsync(context, system.token);
                     }
-
-                    return true;
                 }
             }
 

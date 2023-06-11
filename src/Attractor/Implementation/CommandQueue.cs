@@ -3,11 +3,11 @@ using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
-    internal sealed class CommandQueue : Dispatcher
+    internal sealed class CommandQueue<T> : Dispatcher where T : ICommand
     {
-        private readonly ConcurrentQueue<ICommand> queue = new();
+        private readonly ConcurrentQueue<T> queue = new();
 
-        public void Schedule(ICommand command)
+        public void Schedule(T command)
         {
             queue.Enqueue(command);
 

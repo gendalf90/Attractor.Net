@@ -1,14 +1,15 @@
-namespace Attractor.Tests
+namespace Attractor.Tests.Unit
 {
     public class ActorTests
     {
         [Fact]
-        public async ValueTask ActorSystem_SendMessage_MessageIsReceived()
+        public async Task ActorSystem_SendMessage_MessageIsReceived()
         {
             // Arrange
             var message = "message";
             var received = false;
             var system = ActorSystem.Create();
+            var context = Context.Default();
 
             system.Register(Address.FromString(addr => addr == "test"), builder =>
             {
@@ -19,12 +20,14 @@ namespace Attractor.Tests
                     return default;
                 }));
             });
+
+            context.Set(Payload.FromString(message));
         
             // Act
             var actorRef = system.Refer(Address.FromString("test"));
 
-            await actorRef.SendAsync(Payload.FromString(message));
-        
+            await actorRef.SendAsync(context);
+            
             // Assert
             Assert.True(received);
         }

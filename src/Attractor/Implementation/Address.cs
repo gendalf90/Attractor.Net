@@ -1,9 +1,12 @@
 using System;
+using System.Threading;
 
 namespace Attractor.Implementation
 {
     public static class Address
     {
+        private static readonly ThreadLocal<ValueVisitor> visitorFactory = new(() => new ValueVisitor());
+        
         public static IAddressPolicy FromString(Predicate<string> predicate)
         {
             return new StringAddressPolicy(predicate);
@@ -45,7 +48,7 @@ namespace Attractor.Implementation
                     return false;
                 }
                 
-                var visitor = new ValueVisitor();
+                using var visitor = visitorFactory.Value;
 
                 other.Accept(visitor);
 
@@ -121,7 +124,7 @@ namespace Attractor.Implementation
 
             bool IAddressPolicy.IsMatch(IAddress address)
             {
-                var visitor = new ValueVisitor();
+                using var visitor = visitorFactory.Value;
                 
                 address.Accept(visitor);
 
@@ -150,7 +153,12 @@ namespace Attractor.Implementation
 
             public bool Equals(IAddress other)
             {
-                var visitor = new ValueVisitor();
+                if (other == null)
+                {
+                    return false;
+                }
+                
+                using var visitor = visitorFactory.Value;
 
                 other.Accept(visitor);
 
@@ -189,7 +197,7 @@ namespace Attractor.Implementation
 
             bool IAddressPolicy.IsMatch(IAddress address)
             {
-                var visitor = new ValueVisitor();
+                using var visitor = visitorFactory.Value;
                 
                 address.Accept(visitor);
 
@@ -202,9 +210,9 @@ namespace Attractor.Implementation
             }
         }
 
-        private class ValueVisitor : IVisitor
+        private class ValueVisitor : IVisitor, IDisposable
         {
-            public void Visit<T>(T value)
+            void IVisitor.Visit<T>(T value)
             {
                 switch (value)
                 {
@@ -217,6 +225,14 @@ namespace Attractor.Implementation
                         String = str;
                         break;
                 }
+            }
+
+            void IDisposable.Dispose()
+            {
+                IsBytes = false;
+                IsString = false;
+                Bytes = null;
+                String = null;
             }
 
             public bool IsBytes { get; private set; }

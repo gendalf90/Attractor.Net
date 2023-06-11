@@ -15,9 +15,9 @@ namespace Attractor
             return new SendingTimeoutDecorator(timeout, actorRef, started, token);
         }
 
-        private class SendingTimeoutDecorator : IActorRef
+        private class SendingTimeoutDecorator : IActorRef, ICommand
         {
-            private readonly CommandQueue commands = new();
+            private readonly CommandQueue<ICommand> commands = new();
             private readonly Stopwatch timer = new();
 
             private readonly IActorRef actorRef;
@@ -37,23 +37,27 @@ namespace Attractor
                 }
             }
 
-            async ValueTask IActorRef.PostAsync(IPayload payload, Action<IContext> configuration, CancellationToken token)
+            ValueTask ICommand.ExecuteAsync()
+            {
+                if (!timer.IsRunning)
+                {
+                    Start(timeout);
+                }
+
+                timer.Restart();
+
+                return default;
+            }
+
+            async ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
             {
                 try
                 {
-                    await actorRef.PostAsync(payload, configuration, token);
+                    await actorRef.PostAsync(context, token);
                 }
                 finally
                 {
-                    commands.Schedule(new StrategyCommand(() =>
-                    {
-                        if (!timer.IsRunning)
-                        {
-                            Start(timeout);
-                        }
-
-                        timer.Restart();
-                    }));
+                    commands.Schedule(this);
                 }
             }
 
@@ -67,7 +71,11 @@ namespace Attractor
 
                         if (timer.Elapsed >= timeout)
                         {
-                            await actorRef.PostAsync(StoppingMessage.Instance, null, cancellation);
+                            var context = Context.Default();
+
+                            context.Set<IPayload>(StoppingMessage.Instance);
+                            
+                            await actorRef.PostAsync(context, cancellation);
                         }
                         else
                         {
@@ -79,56 +87,51 @@ namespace Attractor
             }
         }
 
-        public static async ValueTask SendAsync(this IActorRef actorRef, IPayload payload, Action<IContext> configuration = null, CancellationToken token = default)
+        public static async ValueTask SendAsync(this IActorRef actorRef, IContext context, CancellationToken token = default)
         {
+            ArgumentNullException.ThrowIfNull(context, nameof(context));
+            
             var completion = new TaskCompletionSource();
+            var supervisor = context.Get<ISupervisor>();
 
-            void supervisorConfiguration(IContext context)
-            {
-                configuration?.Invoke(context);
-
-                var supervisor = context.Get<ISupervisor>();
-
-                context.Set(Supervisor.FromStrategy(
-                    async (context, error, token) =>
+            context.Set(Supervisor.FromStrategy(
+                async (context, error, token) =>
+                {
+                    try
                     {
-                        try
+                        if (supervisor != null)
                         {
-                            if (supervisor != null)
-                            {
-                                await supervisor.OnProcessedAsync(context, error, token);
-                            }
+                            await supervisor.OnProcessedAsync(context, error, token);
                         }
-                        finally
-                        {
-                            if (error == null)
-                            {
-                                completion.SetResult();
-                            }
-                            else
-                            {
-                                completion.SetException(error);
-                            }
-                        }
-                    },
-                    async (context, token) =>
+                    }
+                    finally
                     {
-                        try
-                        {
-                            if (supervisor != null)
-                            {
-                                await supervisor.OnStoppedAsync(context, token);
-                            }
-                        }
-                        finally
+                        if (error == null)
                         {
                             completion.SetResult();
                         }
-                    }));
-            }
+                        else
+                        {
+                            completion.SetException(error);
+                        }
+                    }
+                },
+                async (context, token) =>
+                {
+                    try
+                    {
+                        if (supervisor != null)
+                        {
+                            await supervisor.OnStoppedAsync(context, token);
+                        }
+                    }
+                    finally
+                    {
+                        completion.SetResult();
+                    }
+                }));
 
-            await actorRef.PostAsync(payload, supervisorConfiguration, token);
-            
+            await actorRef.PostAsync(context, token);
             await completion.Task.WaitAsync(token);
         }
     }

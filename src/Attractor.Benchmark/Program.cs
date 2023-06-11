@@ -6,7 +6,7 @@ namespace Attractor.Benchmark
     {
         static void Main()
         {
-            
+            BenchmarkRunner.Run<Messaging>();
         }
     }
 }
