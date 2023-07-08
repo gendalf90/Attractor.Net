@@ -9,6 +9,7 @@
     <PackageReference Include="Akka" Version="1.5.7" />
     <PackageReference Include="BenchmarkDotNet" Version="0.13.5" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.1" />
+    <PackageReference Include="Proto.Actor" Version="1.2.0" />
   </ItemGroup>
 
   <ItemGroup>

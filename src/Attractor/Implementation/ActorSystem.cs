@@ -25,11 +25,15 @@ namespace Attractor.Implementation
 
         IActorRef IActorSystem.Refer(IAddress address)
         {
+            token.ThrowIfCancellationRequested();
+
             return new ActorRef(this, address);
         }
 
         void IActorSystem.Register(IAddressPolicy policy, Action<IActorBuilder> configuration)
         {
+            token.ThrowIfCancellationRequested();
+
             var builder = new ActorProcessBuilder(this, policy);
 
             configuration?.Invoke(builder);
@@ -128,83 +132,107 @@ namespace Attractor.Implementation
                 {
                     lock (sync)
                     {
-                        current = state ??= new State(this, system.GetOrCreateProcessAsync(address));
+                        current = state ??= new ActorRefState(this, system.GetOrCreateProcessAsync(address));
                     }
                 }
                 
                 return current.PostAsync(context, token);
             }
 
-            private class State : IActorRef
+            public void ClearState()
             {
-                private readonly ActorRef parent;
-                private readonly Task<ActorProcess> promise;
-                private readonly Action onProcessStopped;
-
-                private bool stopped;
-
-                public State(ActorRef parent, Task<ActorProcess> promise)
+                lock (sync)
                 {
-                    this.parent = parent;
-                    this.promise = promise;
-
-                    onProcessStopped = () =>
-                    {
-                        if (stopped)
-                        {
-                            return;
-                        }
-
-                        stopped = true;
-
-                        lock (parent.sync)
-                        {
-                            parent.state = null;
-                        }
-                    };
-                }
-
-                async ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
-                {
-                    ArgumentNullException.ThrowIfNull(context, nameof(context));
-                
-                    parent.system.token.ThrowIfCancellationRequested();
-
-                    context.Set(parent.address);
-                    context.Set<IActorSystem>(parent.system);
-
-                    var process = await promise.WaitAsync(token);
-
-                    process.Send(context, onProcessStopped);
+                    state = null;
                 }
             }
         }
 
-        private class ActorProcess : IVisitor
+        private class ActorRefState : IActorRef
         {
+            private readonly ActorRef parent;
+            private readonly Task<ActorProcess> promise;
+
+            private bool stopped;
+
+            public ActorRefState(ActorRef parent, Task<ActorProcess> promise)
+            {
+                this.parent = parent;
+                this.promise = promise;
+            }
+
+            async ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
+            {
+                IActorRef process = await promise.WaitAsync(token);
+
+                context.Set(this);
+
+                await process.PostAsync(context, token);
+            }
+
+            public void Stop()
+            {
+                if (stopped)
+                {
+                    return;
+                }
+
+                stopped = true;
+
+                parent.ClearState();
+            }
+        }
+
+        private class ActorProcess : IActorProcess
+        {
+            private const int Processing = 0;
+            private const int Stopping = 1;
+            private const int Stopped = 2;
+
+            private readonly PID pid = PID.Generate();
             private readonly CommandQueue<ProcessMessageCommand> commands = new();
 
             private readonly ActorSystem system;
-            private readonly IActor actor;
             private readonly IAddress address;
+            private readonly CancellationTokenSource cancellation;
+
+            private readonly Func<IContext, CancellationToken, ValueTask> receive;
+            private readonly Func<ValueTask> dispose;
+            private readonly Func<IContext, ValueTask> push;
 
             private ActorProcess next;
-            private bool isStopped;
+            private int state;
 
             public ActorProcess(ActorSystem system, IActor actor, IAddress address)
             {
                 this.system = system;
-                this.actor = actor;
                 this.address = address;
+
+                receive = actor.OnReceiveAsync;
+                dispose = actor.DisposeAsync;
+                push = PushAsync;
+
+                cancellation = CancellationTokenSource.CreateLinkedTokenSource(system.token);
             }
 
-            public void Send(IContext context, Action onStopped = null)
-            {   
+            ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
+            {
+                ArgumentNullException.ThrowIfNull(context, nameof(context));
+
+                token.ThrowIfCancellationRequested();
+                system.token.ThrowIfCancellationRequested();
+
+                Post(context);
+
+                return default;
+            }
+
+            private void Post(IContext context)
+            {
                 commands.Schedule(new ProcessMessageCommand
                 {
                     Process = this,
-                    Context = context,
-                    OnStopped = onStopped
+                    Context = context
                 });
             }
 
@@ -213,118 +241,118 @@ namespace Attractor.Implementation
                 public ActorProcess Process { get; init; }
                 
                 public IContext Context { get; init; }
-
-                public Action OnStopped { get; init; }
                 
                 ValueTask ICommand.ExecuteAsync()
                 {
-                    return Process.ReceiveAsync(Context, OnStopped);
+                    return Process.ReceiveAsync(Context);
                 }
             }
 
-            private async ValueTask ReceiveAsync(IContext context, Action onStopped)
+            private async ValueTask ReceiveAsync(IContext context)
             {
-                if (await TryStopAsync(context, onStopped))
+                SetContext(context);
+                OnStopped(context);
+
+                if (await TryPushAsync(context))
                 {
                     return;
                 }
 
-                if (await TrySendToNextProcessAsync(context, onStopped))
-                {
-                    return;
-                }
-                
-                await ProcessAsync(context);
-            }
-
-            private async ValueTask<bool> TryStopAsync(IContext context, Action onStopped)
-            {
-                if (isStopped)
-                {
-                    return false;
-                }
-                
-                var payload = context.Get<IPayload>();
-
-                if (payload == null)
-                {
-                    return false;
-                }
-
-                payload.Accept(this);
-
-                if (!isStopped)
-                {
-                    return false;
-                }
-
-                await ClearAsync(context, onStopped);
-
-                return true;
-            }
-
-            private async ValueTask ClearAsync(IContext context, Action onStopped)
-            {
-                using (Disposable.Create(() => onStopped?.Invoke()))
-                using (Disposable.Create(() => system.RemoveProcess(address)))
-                await using (actor)
-                {
-                    var supervisor = context.Get<ISupervisor>();
-
-                    if (supervisor != null)
-                    {
-                        await supervisor.OnStoppedAsync(context, system.token);
-                    }
-                }
-            }
-
-            private async ValueTask<bool> TrySendToNextProcessAsync(IContext context, Action onStopped)
-            {
-                if (!isStopped)
-                {
-                    return false;
-                }
-
-                onStopped?.Invoke();
-
-                next ??= await system.GetOrCreateProcessAsync(address);
-
-                next.Send(context);
-
-                return true;
-            }
-
-            private async ValueTask ProcessAsync(IContext context)
-            {
-                Exception error = null;
-                
                 try
                 {
-                    await actor.OnReceiveAsync(context, system.token);
-                }
-                catch (Exception e)
-                {
-                    error = e;
-                    
-                    await actor.OnErrorAsync(context, e, system.token);
+                    await OnReceiveAsync(context);
                 }
                 finally
                 {
-                    var supervisor = context.Get<ISupervisor>();
-
-                    if (supervisor != null)
-                    {
-                        await supervisor.OnProcessedAsync(context, error, system.token);
-                    }
+                    await OnClearAsync(context);
                 }
             }
 
-            void IVisitor.Visit<T>(T value)
+            private async ValueTask OnClearAsync(IContext context)
             {
-                if (value is StoppingMessage)
+                if (Interlocked.CompareExchange(ref state, Stopped, Stopping) != Stopping)
                 {
-                    isStopped = true;
+                    return;
                 }
+
+                using (cancellation)
+                using (Disposable.Create(() => context.Get<ActorRefState>()?.Stop()))
+                using (Disposable.Create(() => system.RemoveProcess(address)))
+                {
+                    await OnDisposeAsync(context);
+                }
+            }
+
+            private void OnStopped(IContext context)
+            {
+                if (state == Stopped)
+                {
+                    context.Get<ActorRefState>()?.Stop();
+                }
+            }
+
+            private async ValueTask<bool> TryPushAsync(IContext context)
+            {
+                if (state != Stopped)
+                {
+                    return false;
+                }
+
+                await OnPushAsync(context);
+
+                return true;
+            }
+
+            private ValueTask OnPushAsync(IContext context)
+            {
+                var decorator = context.Get<OnPushDecorator>();
+
+                return decorator == null ? push(context) : decorator(push, context);
+            }
+
+            private async ValueTask PushAsync(IContext context)
+            {
+                next ??= await system.GetOrCreateProcessAsync(address);
+
+                next.Post(context);
+            }
+
+            private ValueTask OnReceiveAsync(IContext context)
+            {
+                var decorator = context.Get<OnReceiveDecorator>();
+
+                return decorator == null ? receive(context, cancellation.Token) : decorator(receive, context, cancellation.Token);
+            }
+
+            private ValueTask OnDisposeAsync(IContext context)
+            {
+                var decorator = context.Get<OnDisposeDecorator>();
+
+                return decorator == null ? dispose() : decorator(dispose);
+            }
+
+            private void SetContext(IContext context)
+            {
+                context.Set(pid);
+                context.Set(address);
+                context.Set<IActorSystem>(system);
+                context.Set<IActorProcess>(this);
+            }
+
+            void IActorProcess.Stop()
+            {
+                if (Interlocked.CompareExchange(ref state, Stopping, Processing) != Processing)
+                {
+                    return;
+                }
+
+                cancellation.Cancel();
+
+                var context = Context.Default();
+
+                context.Set<OnPushDecorator>((_, _) => default);
+
+                Post(context);
             }
         }
 

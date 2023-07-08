@@ -26,7 +26,7 @@ namespace Attractor.Tests.Unit
             // Act
             var actorRef = system.Refer(Address.FromString("test"));
 
-            await actorRef.SendAsync(context);
+            await actorRef.PostAsync(context);
             
             // Assert
             Assert.True(received);
