@@ -188,31 +188,28 @@ namespace Attractor.Implementation
             private const int Processing = 0;
             private const int Stopping = 1;
             private const int Stopped = 2;
+            private const int Collecting = 3;
 
             private readonly PID pid = PID.Generate();
             private readonly CommandQueue<ProcessMessageCommand> commands = new();
 
             private readonly ActorSystem system;
             private readonly IAddress address;
-            private readonly CancellationTokenSource cancellation;
 
-            private readonly Func<IContext, CancellationToken, ValueTask> receive;
-            private readonly Func<ValueTask> dispose;
-            private readonly Func<IContext, ValueTask> push;
+            private readonly OnReceive receive;
+            private readonly OnDispose dispose;
+            private readonly OnCollect collect;
 
-            private ActorProcess next;
             private int state;
 
-            public ActorProcess(ActorSystem system, IActor actor, IAddress address)
+            public ActorProcess(ActorSystem system, IActor actor, ICollector collector, IAddress address)
             {
                 this.system = system;
                 this.address = address;
 
                 receive = actor.OnReceiveAsync;
                 dispose = actor.DisposeAsync;
-                push = PushAsync;
-
-                cancellation = CancellationTokenSource.CreateLinkedTokenSource(system.token);
+                collect = collector.OnCollectAsync;
             }
 
             ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
@@ -251,9 +248,8 @@ namespace Attractor.Implementation
             private async ValueTask ReceiveAsync(IContext context)
             {
                 SetContext(context);
-                OnStopped(context);
 
-                if (await TryPushAsync(context))
+                if (await TryCollectAsync(context))
                 {
                     return;
                 }
@@ -275,7 +271,6 @@ namespace Attractor.Implementation
                     return;
                 }
 
-                using (cancellation)
                 using (Disposable.Create(() => context.Get<ActorRefState>()?.Stop()))
                 using (Disposable.Create(() => system.RemoveProcess(address)))
                 {
@@ -283,45 +278,32 @@ namespace Attractor.Implementation
                 }
             }
 
-            private void OnStopped(IContext context)
+            private async ValueTask<bool> TryCollectAsync(IContext context)
             {
-                if (state == Stopped)
-                {
-                    context.Get<ActorRefState>()?.Stop();
-                }
-            }
-
-            private async ValueTask<bool> TryPushAsync(IContext context)
-            {
-                if (state != Stopped)
+                if (Interlocked.CompareExchange(ref state, Collecting, Stopped) < Stopped)
                 {
                     return false;
                 }
 
-                await OnPushAsync(context);
+                await OnCollectAsync(context);
 
                 return true;
             }
 
-            private ValueTask OnPushAsync(IContext context)
+            private ValueTask OnCollectAsync(IContext context)
             {
-                var decorator = context.Get<OnPushDecorator>();
+                context.Get<ActorRefState>()?.Stop();
 
-                return decorator == null ? push(context) : decorator(push, context);
-            }
+                var decorator = context.Get<OnCollectDecorator>();
 
-            private async ValueTask PushAsync(IContext context)
-            {
-                next ??= await system.GetOrCreateProcessAsync(address);
-
-                next.Post(context);
+                return decorator == null ? collect(context, system.token) : decorator(collect, context, system.token);
             }
 
             private ValueTask OnReceiveAsync(IContext context)
             {
                 var decorator = context.Get<OnReceiveDecorator>();
 
-                return decorator == null ? receive(context, cancellation.Token) : decorator(receive, context, cancellation.Token);
+                return decorator == null ? receive(context, system.token) : decorator(receive, context, system.token);
             }
 
             private ValueTask OnDisposeAsync(IContext context)
@@ -346,11 +328,9 @@ namespace Attractor.Implementation
                     return;
                 }
 
-                cancellation.Cancel();
-
                 var context = Context.Default();
 
-                context.Set<OnPushDecorator>((_, _) => default);
+                context.Set<OnCollectDecorator>((_, _, _) => default);
 
                 Post(context);
             }
@@ -363,6 +343,8 @@ namespace Attractor.Implementation
 
             private Func<IActor, IActor> actorDecoratorFactory = _ => _;
             private Func<IActor> defaultActorFactory = Actor.Empty;
+            private Func<ICollector, ICollector> collectorDecoratorFactory = _ => _;
+            private Func<ICollector> defaultCollectorFactory = Collector.Empty;
 
             public ActorProcessBuilder(ActorSystem system, IAddressPolicy policy)
             {
@@ -382,6 +364,18 @@ namespace Attractor.Implementation
                 actorDecoratorFactory = Decorate(actorDecoratorFactory, factory);
             }
 
+            void IActorBuilder.RegisterCollector<T>(Func<T> factory)
+            {
+                defaultCollectorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
+            }
+
+            void IActorBuilder.DecorateCollector<T>(Func<T> factory)
+            {
+                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+
+                collectorDecoratorFactory = Decorate(collectorDecoratorFactory, factory);
+            }
+
             public bool TryBuildProcess(IAddress address, out ActorProcess process)
             {
                 process = null;
@@ -391,7 +385,11 @@ namespace Attractor.Implementation
                     return false;
                 }
 
-                process = new ActorProcess(system, actorDecoratorFactory(defaultActorFactory()), address);
+                process = new ActorProcess(
+                    system,
+                    actorDecoratorFactory(defaultActorFactory()),
+                    collectorDecoratorFactory(defaultCollectorFactory()),
+                    address);
 
                 return true;
             }

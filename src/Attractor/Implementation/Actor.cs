@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -8,9 +9,7 @@ namespace Attractor.Implementation
     {
         private static readonly IActor empty = new Instance(null, null);
         
-        public static IActorDecorator FromStrategy(
-            OnReceiveDecorator onReceive = null,
-            OnDisposeDecorator onDispose = null)
+        public static IActorDecorator FromStrategy(OnReceiveDecorator onReceive = null, OnDisposeDecorator onDispose = null)
         {
             return new Decorator(onReceive, onDispose);
         }
@@ -29,11 +28,81 @@ namespace Attractor.Implementation
             return new Instance<byte[]>(onReceive, onDispose);
         }
 
-        public static IActor FromStrategy(
-            Func<IContext, CancellationToken, ValueTask> onReceive = null,
-            Func<ValueTask> onDispose = null)
+        public static IActor FromStrategy(OnReceive onReceive = null, OnDispose onDispose = null)
         {
             return new Instance(onReceive, onDispose);
+        }
+
+        public static IActorDecorator Chain(IActor actor)
+        {
+            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+
+            return FromStrategy(
+                async (next, context, token) =>
+                {
+                    await actor.OnReceiveAsync(context, token);
+                    await next(context, token);
+                },
+                async (next) =>
+                {
+                    await actor.DisposeAsync();
+                    await next();
+                });
+        }
+
+        public static IActorDecorator ProcessingTimeout(TimeSpan timeout)
+        {
+            return FromStrategy(async (next, context, token) =>
+            {
+                using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+
+                cancellation.CancelAfter(timeout);
+
+                await next(context, cancellation.Token);
+            });
+        }
+
+        public static IActorDecorator ReceivingTimeout(TimeSpan timeout, Predicate<IContext> match = null)
+        {
+            var command = new MessageReceivingTimeoutCommand
+            {
+                Timer = new Stopwatch(),
+                Timeout = timeout,
+                Cancellation = new CancellationTokenSource(),
+                Commands = new CommandQueue<MessageReceivingTimeoutCommand>(),
+                IsMatch = true
+            };
+
+            return FromStrategy(
+                onReceive: async (next, context, token) =>
+                {
+                    try
+                    {
+                        await next(context, token);
+                    }
+                    finally
+                    {
+                        command.Process = context.Get<IActorProcess>();
+                        
+                        if (match != null)
+                        {
+                            command.IsMatch = match(context);
+                        }
+
+                        command.Commands.Schedule(command);
+                    }
+                },
+                onDispose: async (next) =>
+                {
+                    try
+                    {
+                        await next();
+                    }
+                    finally
+                    {
+                        command.Cancellation.Cancel();
+                    }
+                });
         }
 
         public static IActor Empty()
@@ -43,8 +112,8 @@ namespace Attractor.Implementation
 
         private record Decorator(OnReceiveDecorator OnReceive, OnDisposeDecorator OnDispose) : IActorDecorator
         {
-            private Func<IContext, CancellationToken, ValueTask> onReceive;
-            private Func<ValueTask> onDispose;
+            private OnReceive onReceive;
+            private OnDispose onDispose;
 
             void IDecorator<IActor>.Decorate(IActor value)
             {
@@ -63,9 +132,7 @@ namespace Attractor.Implementation
             }
         }
 
-        private record Instance(
-            Func<IContext, CancellationToken, ValueTask> OnReceive,
-            Func<ValueTask> OnDispose) : IActor
+        private record Instance(OnReceive OnReceive, OnDispose OnDispose) : IActor
         {
             ValueTask IAsyncDisposable.DisposeAsync()
             {
@@ -123,6 +190,64 @@ namespace Attractor.Implementation
                     acceptedValue = result;
                     isAccepted = true;
                 }
+            }
+        }
+
+        private struct MessageReceivingTimeoutCommand : ICommand
+        {
+            public bool IsCallback { get; set; }
+
+            public bool IsMatch { get; set; }
+
+            public IActorProcess Process { get; set; }
+
+            public Stopwatch Timer { get; init; }
+
+            public TimeSpan Timeout { get; init; }
+
+            public CancellationTokenSource Cancellation { get; init; }
+
+            public CommandQueue<MessageReceivingTimeoutCommand> Commands { get; init; }
+
+            readonly ValueTask ICommand.ExecuteAsync()
+            {
+                if (IsCallback)
+                {
+                    Timer.Stop();
+
+                    if (Timer.Elapsed >= Timeout)
+                    {
+                        Process.Stop();
+                    }
+                    else
+                    {
+                        Start(Timeout - Timer.Elapsed, this);
+                        Timer.Start();
+                    }
+                }
+                else
+                {
+                    if (!Timer.IsRunning)
+                    {
+                        Start(Timeout, this);
+                        Timer.Start();
+                    }
+                    else if (IsMatch)
+                    {
+                        Timer.Restart();
+                    }
+                }
+
+                return default;
+            }
+
+            private static void Start(TimeSpan delay, MessageReceivingTimeoutCommand command)
+            {
+                Task.Delay(delay, command.Cancellation.Token).ContinueWith(_ =>
+                {
+                    command.IsCallback = true;
+                    command.Commands.Schedule(command);
+                }, TaskContinuationOptions.OnlyOnRanToCompletion);
             }
         }
     }

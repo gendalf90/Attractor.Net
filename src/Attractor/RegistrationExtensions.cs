@@ -94,6 +94,34 @@ namespace Attractor
                 buildList.Add((_, builder) => builder.RegisterActor(factory));
             }
 
+            void IServicesActorBuilder.RegisterCollector<T>(Func<IServiceProvider, T> factory)
+            {
+                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+
+                buildList.Add((provider, builder) => builder.RegisterCollector(Partial(factory, provider)));
+            }
+
+            void IServicesActorBuilder.DecorateCollector<T>(Func<IServiceProvider, T> factory)
+            {
+                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+
+                buildList.Add((provider, builder) => builder.DecorateCollector(Partial(factory, provider)));
+            }
+
+            void IActorBuilder.RegisterCollector<T>(Func<T> factory)
+            {
+                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+
+                buildList.Add((_, builder) => builder.RegisterCollector(factory));
+            }
+
+            void IActorBuilder.DecorateCollector<T>(Func<T> factory)
+            {
+                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+
+                buildList.Add((_, builder) => builder.DecorateCollector(factory));
+            }
+
             private static Func<TOutput> Partial<TInput, TOutput>(Func<TInput, TOutput> func, TInput value)
             {
                 return () => func(value);

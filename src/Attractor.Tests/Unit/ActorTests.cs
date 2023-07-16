@@ -6,6 +6,7 @@ namespace Attractor.Tests.Unit
         public async Task ActorSystem_SendMessage_MessageIsReceived()
         {
             // Arrange
+            var competion = new TaskCompletionSource();
             var message = "message";
             var received = false;
             var system = ActorSystem.Create();
@@ -16,6 +17,8 @@ namespace Attractor.Tests.Unit
                 builder.RegisterActor(() => Actor.FromString((str, _) => 
                 {
                     received = str == message;
+
+                    competion.SetResult();
                     
                     return default;
                 }));
@@ -27,6 +30,8 @@ namespace Attractor.Tests.Unit
             var actorRef = system.Refer(Address.FromString("test"));
 
             await actorRef.PostAsync(context);
+
+            await competion.Task;
             
             // Assert
             Assert.True(received);

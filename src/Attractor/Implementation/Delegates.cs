@@ -1,12 +1,17 @@
-﻿using System;
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
-    public delegate ValueTask OnReceiveDecorator(Func<IContext, CancellationToken, ValueTask> next, IContext context, CancellationToken token = default);
+    public delegate ValueTask OnReceiveDecorator(OnReceive next, IContext context, CancellationToken token = default);
 
-    public delegate ValueTask OnDisposeDecorator(Func<ValueTask> next);
+    public delegate ValueTask OnReceive(IContext context, CancellationToken token = default);
 
-    public delegate ValueTask OnPushDecorator(Func<IContext, ValueTask> next, IContext context);
+    public delegate ValueTask OnDisposeDecorator(OnDispose next);
+
+    public delegate ValueTask OnDispose();
+
+    public delegate ValueTask OnCollectDecorator(OnCollect next, IContext context, CancellationToken token = default);
+
+    public delegate ValueTask OnCollect(IContext context, CancellationToken token = default);
 }
