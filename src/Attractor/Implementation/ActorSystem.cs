@@ -2,409 +2,346 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Collections;
 
 namespace Attractor.Implementation
 {
-    public sealed class ActorSystem : IActorSystem
+    public static class ActorSystem
     {
-        private readonly Dictionary<IAddress, ActorProcess> processes = new(AddressEqualityComparer.Default);
-        private readonly LinkedList<ActorProcessBuilder> builders = new();
-        private readonly CommandQueue<ICommand> commands = new();
-
-        private readonly CancellationToken token;
-
-        private ActorSystem(CancellationToken token)
-        {
-            this.token = token;
-        }
-        
         public static IActorSystem Create(CancellationToken token = default)
         {
-            return new ActorSystem(token);
+            return new ActorSystemImpl(token);
         }
-
-        IActorRef IActorSystem.Refer(IAddress address)
+        
+        private class ActorSystemImpl : IActorSystem
         {
-            token.ThrowIfCancellationRequested();
+            private readonly Dictionary<IAddress, ActorProcess> processes = new(AddressEqualityComparer.Default);
+            private readonly LinkedList<ActorProcessBuilder> builders = new();
+            private readonly CommandQueue<ICommand> commands = new();
 
-            return new ActorRef(this, address);
-        }
+            private readonly CancellationToken token;
 
-        void IActorSystem.Register(IAddressPolicy policy, Action<IActorBuilder> configuration)
-        {
-            token.ThrowIfCancellationRequested();
-
-            var builder = new ActorProcessBuilder(this, policy);
-
-            configuration?.Invoke(builder);
-
-            commands.Schedule(new StrategyCommand(() =>
+            public ActorSystemImpl(CancellationToken token)
             {
-                builders.AddFirst(builder);
-            }));
-        }
+                this.token = token;
+            }
 
-        private Task<ActorProcess> GetOrCreateProcessAsync(IAddress address)
-        {
-            var completion = new TaskCompletionSource<ActorProcess>();
-
-            commands.Schedule(new StrategyCommand(() =>
+            IActorRef IActorSystem.Refer(IAddress address, bool onlyExist)
             {
-                if (processes.TryGetValue(address, out var result))
-                {
-                    completion.SetResult(result);
-                }
-                else
-                {
-                    commands.Schedule(new TryBuildProcessCommand(completion, builders.First, address, this));
-                }
-            }));
+                token.ThrowIfCancellationRequested();
 
-            return completion.Task;
-        }
+                return new ActorRef(this, address, onlyExist);
+            }
 
-        private record TryBuildProcessCommand(
-            TaskCompletionSource<ActorProcess> Completion,
-            LinkedListNode<ActorProcessBuilder> Node,
-            IAddress Address, 
-            ActorSystem System) : ICommand
-        {
-            ValueTask ICommand.ExecuteAsync()
+            void IActorSystem.Register(IAddressPolicy policy, Action<IActorBuilder> configuration)
             {
-                try
+                token.ThrowIfCancellationRequested();
+
+                var builder = new ActorProcessBuilder(this, policy);
+
+                configuration?.Invoke(builder);
+
+                commands.Schedule(new StrategyCommand(() =>
                 {
-                    if (System.processes.TryGetValue(Address, out var result))
+                    builders.AddFirst(builder);
+                }));
+            }
+
+            private Task<ActorProcess> GetOrCreateProcessAsync(IAddress address, bool onlyExist)
+            {
+                var completion = new TaskCompletionSource<ActorProcess>();
+
+                commands.Schedule(new StrategyCommand(() =>
+                {
+                    if (processes.TryGetValue(address, out var result))
                     {
-                        Completion.SetResult(result);
+                        completion.SetResult(result);
                     }
-                    else if (Node == null)
+                    else if (onlyExist)
                     {
-                        Completion.SetException(new InvalidOperationException());
-                    }
-                    else if (Node.Value.TryBuildProcess(Address, out var process))
-                    {
-                        System.processes.Add(Address, process);
-
-                        Completion.SetResult(process);
+                        completion.SetException(new InvalidOperationException());
                     }
                     else
                     {
-                        System.commands.Schedule(new TryBuildProcessCommand(Completion, Node.Next, Address, System));
+                        commands.Schedule(new TryBuildProcessCommand(completion, builders.First, address, this));
                     }
-                }
-                catch (Exception ex)
-                {
-                    Completion.SetException(ex);
-                }
-                
-                return ValueTask.CompletedTask;
-            }
-        }
+                }));
 
-        private void RemoveProcess(IAddress address)
-        {
-            commands.Schedule(new StrategyCommand(() =>
-            {
-                processes.Remove(address);
-            }));
-        }
-
-        private class ActorRef : IActorRef
-        {
-            private readonly object sync = new();
-            
-            private readonly ActorSystem system;
-            private readonly IAddress address;
-            
-            private IActorRef state;
-
-            public ActorRef(ActorSystem system, IAddress address)
-            {
-                this.system = system;
-                this.address = address;
-            }
-            
-            ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
-            {
-                var current = state;
-
-                if (current == null)
-                {
-                    lock (sync)
-                    {
-                        current = state ??= new ActorRefState(this, system.GetOrCreateProcessAsync(address));
-                    }
-                }
-                
-                return current.PostAsync(context, token);
+                return completion.Task;
             }
 
-            public void ClearState()
+            private record TryBuildProcessCommand(
+                TaskCompletionSource<ActorProcess> Completion,
+                LinkedListNode<ActorProcessBuilder> Node,
+                IAddress Address, 
+                ActorSystemImpl System) : ICommand
             {
-                lock (sync)
-                {
-                    state = null;
-                }
-            }
-        }
-
-        private class ActorRefState : IActorRef
-        {
-            private readonly ActorRef parent;
-            private readonly Task<ActorProcess> promise;
-
-            private bool stopped;
-
-            public ActorRefState(ActorRef parent, Task<ActorProcess> promise)
-            {
-                this.parent = parent;
-                this.promise = promise;
-            }
-
-            async ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
-            {
-                IActorRef process = await promise.WaitAsync(token);
-
-                context.Set(this);
-
-                await process.PostAsync(context, token);
-            }
-
-            public void Stop()
-            {
-                if (stopped)
-                {
-                    return;
-                }
-
-                stopped = true;
-
-                parent.ClearState();
-            }
-        }
-
-        private class ActorProcess : IActorProcess
-        {
-            private const int Processing = 0;
-            private const int Stopping = 1;
-            private const int Stopped = 2;
-            private const int Collecting = 3;
-
-            private readonly PID pid = PID.Generate();
-            private readonly CommandQueue<ProcessMessageCommand> commands = new();
-
-            private readonly ActorSystem system;
-            private readonly IAddress address;
-
-            private readonly OnReceive receive;
-            private readonly OnDispose dispose;
-            private readonly OnCollect collect;
-
-            private int state;
-
-            public ActorProcess(ActorSystem system, IActor actor, ICollector collector, IAddress address)
-            {
-                this.system = system;
-                this.address = address;
-
-                receive = actor.OnReceiveAsync;
-                dispose = actor.DisposeAsync;
-                collect = collector.OnCollectAsync;
-            }
-
-            ValueTask IActorRef.PostAsync(IContext context, CancellationToken token)
-            {
-                ArgumentNullException.ThrowIfNull(context, nameof(context));
-
-                token.ThrowIfCancellationRequested();
-                system.token.ThrowIfCancellationRequested();
-
-                Post(context);
-
-                return default;
-            }
-
-            private void Post(IContext context)
-            {
-                commands.Schedule(new ProcessMessageCommand
-                {
-                    Process = this,
-                    Context = context
-                });
-            }
-
-            private readonly struct ProcessMessageCommand : ICommand
-            {
-                public ActorProcess Process { get; init; }
-                
-                public IContext Context { get; init; }
-                
                 ValueTask ICommand.ExecuteAsync()
                 {
-                    return Process.ReceiveAsync(Context);
+                    try
+                    {
+                        if (System.processes.TryGetValue(Address, out var result))
+                        {
+                            Completion.SetResult(result);
+                        }
+                        else if (Node == null)
+                        {
+                            Completion.SetException(new InvalidOperationException());
+                        }
+                        else if (Node.Value.TryBuildProcess(Address, out var process))
+                        {
+                            System.processes.Add(Address, process);
+
+                            process.Send(Context.System(), System.token);
+
+                            Completion.SetResult(process);
+                        }
+                        else
+                        {
+                            System.commands.Schedule(new TryBuildProcessCommand(Completion, Node.Next, Address, System));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Completion.SetException(ex);
+                    }
+                    
+                    return default;
                 }
             }
 
-            private async ValueTask ReceiveAsync(IContext context)
+            private record StrategyCommand(Action Strategy) : ICommand
             {
-                SetContext(context);
+                ValueTask ICommand.ExecuteAsync()
+                {
+                    Strategy();
 
-                if (await TryCollectAsync(context))
-                {
-                    return;
-                }
-
-                try
-                {
-                    await OnReceiveAsync(context);
-                }
-                finally
-                {
-                    await OnClearAsync(context);
+                    return default;
                 }
             }
 
-            private async ValueTask OnClearAsync(IContext context)
+            private void RemoveProcess(IAddress address)
             {
-                if (Interlocked.CompareExchange(ref state, Stopped, Stopping) != Stopping)
+                commands.Schedule(new StrategyCommand(() =>
                 {
-                    return;
+                    processes.Remove(address);
+                }));
+            }
+
+            private class ActorRef : IActorRef
+            {
+                private readonly Task<ActorProcess> promise;
+
+                public ActorRef(ActorSystemImpl system, IAddress address, bool onlyExist)
+                {
+                    promise = system.GetOrCreateProcessAsync(address, onlyExist);
+                }
+                
+                async ValueTask IActorRef.SendAsync(IList context, CancellationToken token)
+                {
+                    var process = await promise.WaitAsync(token);
+
+                    process.Send(context, token);
+                }
+            }
+
+            private class ActorProcess : IActorProcess
+            {
+                private const long Starting = 0;
+                private const long StopStarting = 1;
+                private const long Processing = 2;
+                private const long StopProcessing = 3;
+                private const long Waiting = 4;
+                private const long Stopping = 5;
+                private const long Collecting = 6;
+                
+                private readonly PID pid = PID.Generate();
+                private readonly CommandQueue<ProcessMessageCommand> commands = new();
+
+                private readonly ActorSystemImpl system;
+                private readonly IAddress address;
+                private readonly IActor actor;
+
+                private long state = Starting;
+
+                public ActorProcess(ActorSystemImpl system, IAddress address, IActor actor)
+                {
+                    this.system = system;
+                    this.address = address;
+                    this.actor = actor;
                 }
 
-                using (Disposable.Create(() => context.Get<ActorRefState>()?.Stop()))
-                using (Disposable.Create(() => system.RemoveProcess(address)))
+                ValueTask IActorRef.SendAsync(IList context, CancellationToken token)
                 {
-                    await OnDisposeAsync(context);
+                    Send(context, token);
+
+                    return default;
+                }
+
+                public void Send(IList context, CancellationToken token)
+                {
+                    ArgumentNullException.ThrowIfNull(context, nameof(context));
+
+                    token.ThrowIfCancellationRequested();
+                    system.token.ThrowIfCancellationRequested();
+
+                    commands.Schedule(new ProcessMessageCommand
+                    {
+                        Process = this,
+                        Context = context
+                    });
+                }
+
+                private IActor DecorateFromContext(IList context)
+                {
+                    var decoratee = actor;
+                    
+                    foreach (var item in context)
+                    {
+                        if (item is IActorDecorator decorator)
+                        {
+                            decorator.Decorate(decoratee);
+
+                            decoratee = decorator;
+                        }
+                    }
+
+                    return decoratee;
+                }
+
+                private void BeforeProcessing()
+                {
+                    Interlocked.CompareExchange(ref state, Processing, Waiting);
+                }
+
+                private async ValueTask ProcessAsync(IList context)
+                {
+                    try
+                    {
+                        BeforeProcessing();
+                        
+                        context.Set<PID, IAddress, IActorSystem, IActorProcess>(pid, address, system, this);
+
+                        var result = DecorateFromContext(context);
+                        
+                        await result.OnReceiveAsync(context, system.token);
+                    }
+                    finally
+                    {
+                        AfterProcessing();
+                    }
+                }
+
+                private void AfterProcessing()
+                {
+                    if (Interlocked.CompareExchange(ref state, Collecting, Stopping) == Collecting)
+                    {
+                        return;
+                    }
+                    
+                    if (Interlocked.CompareExchange(ref state, Waiting, Processing) == Processing ||
+                        Interlocked.CompareExchange(ref state, Stopping, StopProcessing) == StopProcessing ||
+                        Interlocked.CompareExchange(ref state, Waiting, Starting) == Starting ||
+                        Interlocked.CompareExchange(ref state, Stopping, StopStarting) == StopStarting)
+                    {
+                        return;
+                    }
+
+                    system.RemoveProcess(address);
+                }
+
+                void IActorProcess.Stop()
+                {
+                    if (Interlocked.CompareExchange(ref state, Stopping, Waiting) == Waiting ||
+                        Interlocked.CompareExchange(ref state, StopProcessing, Processing) == Processing ||
+                        Interlocked.CompareExchange(ref state, StopStarting, Starting) == Starting)
+                    {
+                        Send(Context.System(), system.token);
+                    }
+                }
+
+                bool IActorProcess.IsStarting()
+                {
+                    return Interlocked.Read(ref state) < Processing;
+                }
+
+                bool IActorProcess.IsProcessing()
+                {
+                    return Interlocked.Read(ref state) < Collecting;
+                }
+
+                bool IActorProcess.IsStopping()
+                {
+                    return Interlocked.Read(ref state) == Stopping;
+                }
+
+                bool IActorProcess.IsCollecting()
+                {
+                    return Interlocked.Read(ref state) == Collecting;
+                }
+
+                private readonly record struct ProcessMessageCommand(ActorProcess Process, IList Context) : ICommand
+                {
+                    ValueTask ICommand.ExecuteAsync()
+                    {
+                        return Process.ProcessAsync(Context);
+                    }
                 }
             }
 
-            private async ValueTask<bool> TryCollectAsync(IContext context)
+            private class ActorProcessBuilder : IActorBuilder
             {
-                if (Interlocked.CompareExchange(ref state, Collecting, Stopped) < Stopped)
+                private readonly ActorSystemImpl system;
+                private readonly IAddressPolicy policy;
+
+                private Func<IActor> defaultActorFactory = Actor.Empty;
+                private Func<IActor, IActor> actorDecoratorFactory = _ => _;
+
+                public ActorProcessBuilder(ActorSystemImpl system, IAddressPolicy policy)
                 {
-                    return false;
+                    this.system = system;
+                    this.policy = policy;
                 }
 
-                await OnCollectAsync(context);
-
-                return true;
-            }
-
-            private ValueTask OnCollectAsync(IContext context)
-            {
-                context.Get<ActorRefState>()?.Stop();
-
-                var decorator = context.Get<OnCollectDecorator>();
-
-                return decorator == null ? collect(context, system.token) : decorator(collect, context, system.token);
-            }
-
-            private ValueTask OnReceiveAsync(IContext context)
-            {
-                var decorator = context.Get<OnReceiveDecorator>();
-
-                return decorator == null ? receive(context, system.token) : decorator(receive, context, system.token);
-            }
-
-            private ValueTask OnDisposeAsync(IContext context)
-            {
-                var decorator = context.Get<OnDisposeDecorator>();
-
-                return decorator == null ? dispose() : decorator(dispose);
-            }
-
-            private void SetContext(IContext context)
-            {
-                context.Set(pid);
-                context.Set(address);
-                context.Set<IActorSystem>(system);
-                context.Set<IActorProcess>(this);
-            }
-
-            void IActorProcess.Stop()
-            {
-                if (Interlocked.CompareExchange(ref state, Stopping, Processing) != Processing)
+                void IActorBuilder.Register<T>(Func<T> factory)
                 {
-                    return;
+                    defaultActorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
                 }
 
-                var context = Context.Default();
-
-                context.Set<OnCollectDecorator>((_, _, _) => default);
-
-                Post(context);
-            }
-        }
-
-        private class ActorProcessBuilder : IActorBuilder
-        {
-            private readonly ActorSystem system;
-            private readonly IAddressPolicy policy;
-
-            private Func<IActor, IActor> actorDecoratorFactory = _ => _;
-            private Func<IActor> defaultActorFactory = Actor.Empty;
-            private Func<ICollector, ICollector> collectorDecoratorFactory = _ => _;
-            private Func<ICollector> defaultCollectorFactory = Collector.Empty;
-
-            public ActorProcessBuilder(ActorSystem system, IAddressPolicy policy)
-            {
-                this.system = system;
-                this.policy = policy;
-            }
-
-            void IActorBuilder.RegisterActor<T>(Func<T> factory)
-            {
-                defaultActorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
-            }
-
-            void IActorBuilder.DecorateActor<T>(Func<T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-
-                actorDecoratorFactory = Decorate(actorDecoratorFactory, factory);
-            }
-
-            void IActorBuilder.RegisterCollector<T>(Func<T> factory)
-            {
-                defaultCollectorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
-            }
-
-            void IActorBuilder.DecorateCollector<T>(Func<T> factory)
-            {
-                ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-
-                collectorDecoratorFactory = Decorate(collectorDecoratorFactory, factory);
-            }
-
-            public bool TryBuildProcess(IAddress address, out ActorProcess process)
-            {
-                process = null;
-
-                if (!policy.IsMatch(address))
+                void IActorBuilder.Decorate<T>(Func<T> factory)
                 {
-                    return false;
+                    ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+
+                    actorDecoratorFactory = Decorate(actorDecoratorFactory, factory);
                 }
 
-                process = new ActorProcess(
-                    system,
-                    actorDecoratorFactory(defaultActorFactory()),
-                    collectorDecoratorFactory(defaultCollectorFactory()),
-                    address);
-
-                return true;
-            }
-
-            private static Func<TResult, TResult> Decorate<TResult, TDecorator>(Func<TResult, TResult> resultFactory, Func<TDecorator> decoratorFactory) 
-                where TDecorator : class, TResult, IDecorator<TResult>
-            {
-                return result =>
+                public bool TryBuildProcess(IAddress address, out ActorProcess process)
                 {
-                    var decorator = decoratorFactory();
+                    process = null;
 
-                    decorator.Decorate(result);
+                    if (!policy.IsMatch(address))
+                    {
+                        return false;
+                    }
 
-                    return resultFactory(decorator);
-                };
+                    process = new ActorProcess(system, address, actorDecoratorFactory(defaultActorFactory()));
+
+                    return true;
+                }
+
+                private static Func<TResult, TResult> Decorate<TResult, TDecorator>(Func<TResult, TResult> resultFactory, Func<TDecorator> decoratorFactory) 
+                    where TDecorator : class, TResult, IDecorator<TResult>
+                {
+                    return decoratee =>
+                    {
+                        var result = resultFactory(decoratee);
+                        var decorator = decoratorFactory();
+
+                        decorator.Decorate(result);
+
+                        return decorator;
+                    };
+                }
             }
         }
     }

@@ -1,38 +1,48 @@
-﻿using System;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace Attractor.Implementation
 {
     public static class Context
     {
-        public static IContext Default()
+        private const int DefaultCapacity = 16;
+        
+        public static IList Default()
         {
-            return new DictionaryContext();
+            return new DefaultContext();
         }
 
-        private class DictionaryContext : Dictionary<Type, object>, IContext
+        public static IList System()
         {
-            T IContext.Get<T>()
-            {
-                if (TryGetValue(typeof(T), out var result))
-                {
-                    return result as T;
-                }
+            return new SystemContext();
+        }
 
-                return null;
-            }
+        public static IMessageFilter FromStrategy(Predicate<IList> strategy)
+        {
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
 
-            void IContext.Set<T>(T value)
+            return new StrategyMessageFilter(strategy);
+        }
+
+        public static IMessageFilter OnlySystem()
+        {
+            return FromStrategy(context =>
             {
-                if (value == null)
-                {
-                    Remove(typeof(T));
-                }
-                else
-                {
-                    this[typeof(T)] = value;
-                }
+                return context is SystemContext;
+            });
+        }
+
+        private record StrategyMessageFilter(Predicate<IList> Strategy) : IMessageFilter
+        {
+            bool IMessageFilter.IsMatch(IList context)
+            {
+                return Strategy(context);
             }
         }
+
+        private class DefaultContext() : List<object>(DefaultCapacity);
+
+        private class SystemContext() : List<object>(DefaultCapacity);
     }
 }

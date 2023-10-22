@@ -1,6 +1,4 @@
 ﻿namespace Attractor
 {
-    public interface IPayload : IVisitable
-    {
-    }
+    public interface IPayload : IVisitable;
 }

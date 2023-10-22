@@ -35,5 +35,10 @@ namespace Attractor.Implementation
         {
             return new PID(Guid.NewGuid());
         }
+
+        public static PID Empty()
+        {
+            return new PID(Guid.Empty);
+        }
     }
 }

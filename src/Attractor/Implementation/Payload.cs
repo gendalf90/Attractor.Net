@@ -4,14 +4,9 @@ namespace Attractor.Implementation
     {
         private static readonly EmptyPayload empty = new();
 
-        public static IPayload FromString(string value)
+        public static IPayload FromType<T>(T value)
         {
-            return new TypedPayload<string>(value);
-        }
-
-        public static IPayload FromBytes(params byte[] value)
-        {
-            return new TypedPayload<byte[]>(value);
+            return new TypedPayload<T>(value);
         }
 
         public static IPayload Empty()
@@ -19,25 +14,18 @@ namespace Attractor.Implementation
             return empty;
         }
 
-        private class EmptyPayload : IPayload
+        private record EmptyPayload : IPayload
         {
             void IVisitable.Accept<T>(T visitor)
             {
             }
         }
 
-        private class TypedPayload<TType> : IPayload
+        private record TypedPayload<TPayload>(TPayload Value) : IPayload
         {
-            private readonly TType value;
-
-            public TypedPayload(TType value)
-            {
-                this.value = value;
-            }
-
             void IVisitable.Accept<TVisitor>(TVisitor visitor)
             {
-                visitor.Visit(value);
+                visitor.Visit(Value);
             }
         }
     }
