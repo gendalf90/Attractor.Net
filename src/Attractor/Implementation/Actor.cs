@@ -14,7 +14,7 @@ namespace Attractor.Implementation
             return new Decorator(onReceive ?? throw new ArgumentNullException(nameof(onReceive)));
         }
 
-        public static IActor FromType<T>(OnReceive<T> onReceive)
+        public static IActor FromPayload<T>(OnReceive<T> onReceive)
         {
             return new Instance<T>(onReceive ?? throw new ArgumentNullException(nameof(onReceive)));
         }
@@ -24,15 +24,15 @@ namespace Attractor.Implementation
             return new Instance(onReceive ?? throw new ArgumentNullException(nameof(onReceive)));
         }
 
-        public static IActorDecorator Chain(IActor actor)
+        public static IActor FromBuilder(Action<IActorBuilder> configuration)
         {
-            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+            ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
 
-            return FromStrategy(async (next, context, token) =>
-            {
-                await next(context, token);
-                await actor.OnReceiveAsync(context, token);
-            });
+            var builder = new ActorBuilder();
+
+            configuration(builder);
+
+            return builder.Build();
         }
 
         public static IActor Empty()
@@ -133,7 +133,7 @@ namespace Attractor.Implementation
                     return;
                 }
 
-                if (filter != null && !filter.IsMatch(context))
+                if (filter != null && !await filter.IsMatchAsync(context, token))
                 {
                     return;
                 }

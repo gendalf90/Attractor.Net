@@ -28,6 +28,8 @@ namespace Attractor.Implementation
 
             IActorRef IActorSystem.Refer(IAddress address, bool onlyExist)
             {
+                ArgumentNullException.ThrowIfNull(address, nameof(address));
+                
                 token.ThrowIfCancellationRequested();
 
                 return new ActorRef(this, address, onlyExist);
@@ -35,15 +37,17 @@ namespace Attractor.Implementation
 
             void IActorSystem.Register(IAddressPolicy policy, Action<IActorBuilder> configuration)
             {
+                ArgumentNullException.ThrowIfNull(policy, nameof(policy));
+                
                 token.ThrowIfCancellationRequested();
 
-                var builder = new ActorProcessBuilder(this, policy);
+                var builder = new ActorBuilder();
 
                 configuration?.Invoke(builder);
 
                 commands.Schedule(new StrategyCommand(() =>
                 {
-                    builders.AddFirst(builder);
+                    builders.AddFirst(new ActorProcessBuilder(policy, builder, this));
                 }));
             }
 
@@ -223,7 +227,7 @@ namespace Attractor.Implementation
                         context.Set<PID, IAddress, IActorSystem, IActorProcess>(pid, address, system, this);
 
                         var result = DecorateFromContext(context);
-                        
+
                         await result.OnReceiveAsync(context, system.token);
                     }
                     finally
@@ -265,7 +269,7 @@ namespace Attractor.Implementation
                     return Interlocked.Read(ref state) < Processing;
                 }
 
-                bool IActorProcess.IsProcessing()
+                bool IActorProcess.IsActive()
                 {
                     return Interlocked.Read(ref state) < Collecting;
                 }
@@ -289,58 +293,20 @@ namespace Attractor.Implementation
                 }
             }
 
-            private class ActorProcessBuilder : IActorBuilder
+            private record ActorProcessBuilder(IAddressPolicy Policy, ActorBuilder ActorBuilder, ActorSystemImpl ActorSystem)
             {
-                private readonly ActorSystemImpl system;
-                private readonly IAddressPolicy policy;
-
-                private Func<IActor> defaultActorFactory = Actor.Empty;
-                private Func<IActor, IActor> actorDecoratorFactory = _ => _;
-
-                public ActorProcessBuilder(ActorSystemImpl system, IAddressPolicy policy)
-                {
-                    this.system = system;
-                    this.policy = policy;
-                }
-
-                void IActorBuilder.Register<T>(Func<T> factory)
-                {
-                    defaultActorFactory = factory ?? throw new ArgumentNullException(nameof(factory));
-                }
-
-                void IActorBuilder.Decorate<T>(Func<T> factory)
-                {
-                    ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-
-                    actorDecoratorFactory = Decorate(actorDecoratorFactory, factory);
-                }
-
                 public bool TryBuildProcess(IAddress address, out ActorProcess process)
                 {
                     process = null;
 
-                    if (!policy.IsMatch(address))
+                    if (!Policy.IsMatch(address))
                     {
                         return false;
                     }
 
-                    process = new ActorProcess(system, address, actorDecoratorFactory(defaultActorFactory()));
+                    process = new ActorProcess(ActorSystem, address, ActorBuilder.Build());
 
                     return true;
-                }
-
-                private static Func<TResult, TResult> Decorate<TResult, TDecorator>(Func<TResult, TResult> resultFactory, Func<TDecorator> decoratorFactory) 
-                    where TDecorator : class, TResult, IDecorator<TResult>
-                {
-                    return decoratee =>
-                    {
-                        var result = resultFactory(decoratee);
-                        var decorator = decoratorFactory();
-
-                        decorator.Decorate(result);
-
-                        return decorator;
-                    };
                 }
             }
         }

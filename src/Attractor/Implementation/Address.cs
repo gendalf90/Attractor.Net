@@ -32,6 +32,16 @@ namespace Attractor.Implementation
                 return predicate(visitor.String);
             });
         }
+
+        public static IAddressPolicy FromExact(IAddress address)
+        {
+            ArgumentNullException.ThrowIfNull(address, nameof(address));
+            
+            return FromStrategy(toCompare =>
+            {
+                return AddressEqualityComparer.Default.Equals(toCompare, address);
+            });
+        }
         
         public static IAddress FromString(string value)
         {

@@ -4,7 +4,7 @@
     {
         bool IsStarting();
 
-        bool IsProcessing();
+        bool IsActive();
 
         bool IsStopping();
 

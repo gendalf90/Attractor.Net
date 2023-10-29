@@ -11,10 +11,11 @@ namespace Attractor.Tests.Unit
             var received = false;
             var system = ActorSystem.Create();
             var context = Context.Default();
+            var address = Address.FromString("test");
 
-            system.Register(Address.FromString(addr => addr == "test"), builder =>
+            system.Register(Address.FromExact(address), builder =>
             {
-                builder.RegisterActor(() => Actor.FromString((str, _) => 
+                builder.Register(() => Actor.FromPayload<string>((str, _) => 
                 {
                     received = str == message;
 
@@ -24,12 +25,12 @@ namespace Attractor.Tests.Unit
                 }));
             });
 
-            context.Set(Payload.FromString(message));
+            context.Set(Payload.From(message));
         
             // Act
-            var actorRef = system.Refer(Address.FromString("test"));
+            var actorRef = system.Refer(address);
 
-            await actorRef.PostAsync(context);
+            await actorRef.SendAsync(context);
 
             await competion.Task;
             

@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
@@ -18,26 +20,23 @@ namespace Attractor.Implementation
             return new SystemContext();
         }
 
-        public static IMessageFilter FromStrategy(Predicate<IList> strategy)
+        public static IMessageFilter FromStrategy(OnMatch strategy)
         {
             ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
 
             return new StrategyMessageFilter(strategy);
         }
 
-        public static IMessageFilter OnlySystem()
+        public static bool IsSystem(IList context)
         {
-            return FromStrategy(context =>
-            {
-                return context is SystemContext;
-            });
+            return context is SystemContext;
         }
 
-        private record StrategyMessageFilter(Predicate<IList> Strategy) : IMessageFilter
+        private record StrategyMessageFilter(OnMatch Strategy) : IMessageFilter
         {
-            bool IMessageFilter.IsMatch(IList context)
+            ValueTask<bool> IMessageFilter.IsMatchAsync(IList context, CancellationToken token)
             {
-                return Strategy(context);
+                return Strategy(context, token);
             }
         }
 

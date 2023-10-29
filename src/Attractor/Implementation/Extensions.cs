@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Diagnostics;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,71 +74,6 @@ namespace Attractor.Implementation
             }
         }
 
-        public static async ValueTask ProcessAsync(this IActorRef actorRef, IList context, CancellationToken token = default)
-        {
-            var decorator = new ProcessingDecorator();
-            var registration = token.Register(Cancellation, decorator);
-
-            try
-            {
-                if (!context.Contains(decorator))
-                {
-                    context.Add(decorator);
-                }
-
-                await actorRef.SendAsync(context, token);
-
-                await decorator.Task;
-            }
-            finally
-            {
-                registration.Dispose();
-            }
-        }
-
-        private static Action<object, CancellationToken> Cancellation = (state, token) =>
-        {
-            (state as TaskCompletionSource)?.TrySetCanceled(token);
-        };
-
-        private class ProcessingDecorator : TaskCompletionSource, IActorDecorator
-        {
-            private IActor decoratee;
-            
-            void IDecorator<IActor>.Decorate(IActor value)
-            {
-                decoratee = value;
-            }
-
-            async ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
-            {
-                var process = context.Find<IActorProcess>();
-
-                if (!process.IsProcessing())
-                {
-                    await decoratee.OnReceiveAsync(context, token);
-                }
-                else
-                {
-                    await ProcessAsync(context, token);
-                }
-            }
-
-            private async ValueTask ProcessAsync(IList context, CancellationToken token)
-            {
-                try
-                {
-                    await decoratee.OnReceiveAsync(context, token);
-
-                    TrySetResult();
-                }
-                catch (Exception e)
-                {
-                    TrySetException(e);
-                }
-            }
-        }
-
         public static void WithReceivingTimeout(this IActorBuilder builder, TimeSpan timeout, IMessageFilter filter = null)
         {
             builder.Decorate(() => new ReceivingTimeoutDecorator(timeout, filter));
@@ -148,16 +82,14 @@ namespace Attractor.Implementation
         private class ReceivingTimeoutDecorator : IActorDecorator
         {
             private readonly Stopwatch stopwatch = new();
+            private readonly object sync = new();
 
             private readonly TimeSpan timeout;
             private readonly IMessageFilter filter;
 
             private Timer timer;
             private IActor decoratee;
-            private RestartTimerMessage restart;
-            private IActorProcess process;
-            private PID pid;
-            private bool needStopAndRestartWatch;
+            private bool needStopAndRestart;
             
             public ReceivingTimeoutDecorator(TimeSpan timeout, IMessageFilter filter)
             {
@@ -170,23 +102,16 @@ namespace Attractor.Implementation
                 decoratee = value;
             }
 
-            private void Init(IList context)
+            private async ValueTask BeforeProcessingAsync(IList context, CancellationToken token)
             {
-                (restart, process, pid) = context.Find<RestartTimerMessage, IActorProcess, PID>();
-            }
+                needStopAndRestart = filter == null || await filter.IsMatchAsync(context, token);
 
-            private void BeforeProcessing(IList context)
-            {
-                if (restart != null || process.IsStarting())
+                if (needStopAndRestart)
                 {
-                    return;
-                }
-
-                needStopAndRestartWatch = filter == null || filter.IsMatch(context);
-                
-                if (needStopAndRestartWatch)
-                {
-                    stopwatch.Stop();
+                    lock (sync)
+                    {
+                        stopwatch.Stop();
+                    }
                 }
             }
 
@@ -194,69 +119,56 @@ namespace Attractor.Implementation
             {
                 try
                 {
-                    Init(context);
-                    BeforeProcessing(context);
+                    await BeforeProcessingAsync(context, token);
                     
                     await decoratee.OnReceiveAsync(context, token);
                 }
                 finally
                 {
-                    AfterProcessing();
+                    AfterProcessing(context);
                 }
             }
 
-            private void AfterProcessing()
+            private void AfterProcessing(IList context)
             {
-                StopWatch();
-                
-                if (TryStart())
-                {
-                    return;
-                }
-                
-                if (TryStop())
+                var process = context.Find<IActorProcess>();
+
+                if (process == null)
                 {
                     return;
                 }
 
-                RestartTimerIfNeeded();
-                RestartOrResumeWatch();
-            }
-
-            private void StopWatch()
-            {
-                stopwatch.Stop();
-            }
-
-            private void RestartOrResumeWatch()
-            {
-                if (needStopAndRestartWatch)
+                lock (sync)
                 {
-                    stopwatch.Restart();
-                }
-                else
-                {
-                    stopwatch.Start();
+                    stopwatch.Stop();
+
+                    if (TryStop(process))
+                    {
+                        return;
+                    }
+
+                    TryStartTimer(process, timeout);
+
+                    if (needStopAndRestart)
+                    {
+                        stopwatch.Restart();
+                    }
+                    else
+                    {
+                        stopwatch.Start();
+                    }
                 }
             }
 
-            private bool TryStart()
+            private void ClearTimer()
             {
-                if (!process.IsStarting())
-                {
-                    return false;
-                }
-
-                StartTimer(timeout);
-
-                stopwatch.Start();
-
-                return true;
+                timer?.Dispose();
+                timer = null;
             }
 
-            private bool TryStop()
+            private bool TryStop(IActorProcess process)
             {
-                if (!process.IsProcessing())
+                if (!process.IsActive())
                 {
                     return true;
                 }
@@ -271,40 +183,40 @@ namespace Attractor.Implementation
                 return true;
             }
 
-            private bool RestartTimerIfNeeded()
+            private void TryStartTimer(IActorProcess process, TimeSpan dueTime)
             {
-                if (restart == null || restart.PID != pid)
+                if (timer != null)
                 {
-                    return false;
+                    return;
                 }
-
-                StartTimer(timeout - stopwatch.Elapsed);
-
-                return true;
-            }
-
-            private void StartTimer(TimeSpan dueTime)
-            {
-                timer?.Dispose();
                 
                 timer = new Timer(
                     Callback, 
-                    new RestartTimerMessage(process, pid), 
+                    process,
                     dueTime, 
                     Timeout.InfiniteTimeSpan);
             }
 
             private void Callback(object obj)
             {
-                var message = (RestartTimerMessage)obj;
-                var context = Context.System();
+                var process = (IActorProcess)obj;
 
-                context.Set(message);
+                lock (sync)
+                {
+                    stopwatch.Stop();
 
-                _ = message.ActorRef.SendAsync(context);
+                    ClearTimer();
+
+                    if (TryStop(process))
+                    {
+                        return;
+                    }
+
+                    TryStartTimer(process, timeout - stopwatch.Elapsed);
+
+                    stopwatch.Start();
+                }
             }
-
-            private record RestartTimerMessage(IActorRef ActorRef, PID PID);
         }
 
         public static void Set<T>(this IList context, T value) where T : class
@@ -453,6 +365,92 @@ namespace Attractor.Implementation
             return result.first;
         }
 
+        public static void Chain(this IActorBuilder builder, IActor actor)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+
+            builder.Decorate(() => Actor.FromStrategy(async (next, context, token) =>
+            {
+                await next(context, token);
+                await actor.OnReceiveAsync(context, token);
+            }));
+        }
+
+        public static void Start(this IActorBuilder builder, IActor actor)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+
+            builder.Chain(new ProcessActor(OnStart: actor.OnReceiveAsync));
+        }
+
+        public static void Active(this IActorBuilder builder, IActor actor)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+
+            builder.Chain(new ProcessActor(OnActive: actor.OnReceiveAsync));
+        }
+
+        public static void Stop(this IActorBuilder builder, IActor actor)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+
+            builder.Chain(new ProcessActor(OnStop: actor.OnReceiveAsync));
+        }
+
+        public static void Collect(this IActorBuilder builder, IActor actor)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+
+            builder.Chain(new ProcessActor(OnCollect: actor.OnReceiveAsync));
+        }
+
+        private record ProcessActor(
+            OnReceive OnStart = null,
+            OnReceive OnStop = null,
+            OnReceive OnActive = null,
+            OnReceive OnCollect = null
+        ) : IActor
+        {
+            async ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
+            {
+                var process = context.Find<IActorProcess>();
+
+                if (process == null)
+                {
+                    return;
+                }
+
+                if (process.IsStarting())
+                {
+                    await CallAsync(OnStart, context, token);
+                    await CallAsync(OnActive, context, token);
+                }
+                else if (process.IsStopping())
+                {
+                    await CallAsync(OnStop, context, token);
+                    await CallAsync(OnActive, context, token);
+                }
+                else if (process.IsActive())
+                {
+                    await CallAsync(OnActive, context, token);
+                }
+                else if (process.IsCollecting())
+                {
+                    await CallAsync(OnCollect, context, token);
+                }
+            }
+
+            ValueTask CallAsync(OnReceive onReceive, IList context, CancellationToken token)
+            {
+                return onReceive != null ? onReceive(context, token) : default;
+            }
+        }
+
         public static IServiceCollection AddActorSystem(
             this IServiceCollection services, 
             Action<IServiceProvider, IActorBuilder> configuration = null,
@@ -464,7 +462,7 @@ namespace Attractor.Implementation
             {
                 var system = ActorSystem.Create(token);
 
-                foreach (var builder in provider.GetServices<ActorBuilder>())
+                foreach (var builder in provider.GetServices<ServicesActorBuilder>())
                 {
                     system.Register(builder.AddressPolicy, Partial(configuration, provider) + Partial(builder.Configuration, provider));
                 }
@@ -481,7 +479,7 @@ namespace Attractor.Implementation
             ArgumentNullException.ThrowIfNull(services, nameof(services));
             ArgumentNullException.ThrowIfNull(policy, nameof(policy));
 
-            return services.AddSingleton(new ActorBuilder(policy, configuration));
+            return services.AddSingleton(new ServicesActorBuilder(policy, configuration));
         }
 
         private static Action<TSecond> Partial<TFirst, TSecond>(Action<TFirst, TSecond> func, TFirst value)
@@ -489,6 +487,6 @@ namespace Attractor.Implementation
             return input => func?.Invoke(value, input);
         }
 
-        private record ActorBuilder(IAddressPolicy AddressPolicy, Action<IServiceProvider, IActorBuilder> Configuration);
+        private record ServicesActorBuilder(IAddressPolicy AddressPolicy, Action<IServiceProvider, IActorBuilder> Configuration);
     }
 }

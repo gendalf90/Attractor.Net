@@ -1,9 +1,11 @@
 using System.Collections;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Attractor
 {
     public interface IMessageFilter
     {
-        bool IsMatch(IList context);
+        ValueTask<bool> IsMatchAsync(IList context, CancellationToken token = default);
     }
 }
