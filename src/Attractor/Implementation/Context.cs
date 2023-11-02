@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,12 +9,12 @@ namespace Attractor.Implementation
     {
         private const int DefaultCapacity = 16;
         
-        public static IList Default()
+        public static IContext Default()
         {
             return new DefaultContext();
         }
 
-        public static IList System()
+        public static IContext System()
         {
             return new SystemContext();
         }
@@ -27,21 +26,28 @@ namespace Attractor.Implementation
             return new StrategyMessageFilter(strategy);
         }
 
-        public static bool IsSystem(IList context)
+        public static IMessageFilter FromStrategy(Predicate<IContext> strategy)
         {
-            return context is SystemContext;
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            return FromStrategy((context, _) => ValueTask.FromResult(strategy(context)));
+        }
+
+        public static IMessageFilter IsSystem()
+        {
+            return FromStrategy(context => context is SystemContext);
         }
 
         private record StrategyMessageFilter(OnMatch Strategy) : IMessageFilter
         {
-            ValueTask<bool> IMessageFilter.IsMatchAsync(IList context, CancellationToken token)
+            ValueTask<bool> IMessageFilter.IsMatchAsync(IContext context, CancellationToken token)
             {
                 return Strategy(context, token);
             }
         }
 
-        private class DefaultContext() : List<object>(DefaultCapacity);
+        private class DefaultContext() : Dictionary<object, object>(DefaultCapacity), IContext;
 
-        private class SystemContext() : List<object>(DefaultCapacity);
+        private class SystemContext() : Dictionary<object, object>(DefaultCapacity), IContext;
     }
 }

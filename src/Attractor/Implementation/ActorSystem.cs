@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Collections;
+using System.Linq;
 
 namespace Attractor.Implementation
 {
@@ -141,7 +142,7 @@ namespace Attractor.Implementation
                     promise = system.GetOrCreateProcessAsync(address, onlyExist);
                 }
                 
-                async ValueTask IActorRef.SendAsync(IList context, CancellationToken token)
+                async ValueTask IActorRef.SendAsync(IContext context, CancellationToken token)
                 {
                     var process = await promise.WaitAsync(token);
 
@@ -161,6 +162,7 @@ namespace Attractor.Implementation
                 
                 private readonly PID pid = PID.Generate();
                 private readonly CommandQueue<ProcessMessageCommand> commands = new();
+                private readonly Func<IActor, KeyValuePair<object, object>, IActor> decorator = Decorate;
 
                 private readonly ActorSystemImpl system;
                 private readonly IAddress address;
@@ -175,14 +177,14 @@ namespace Attractor.Implementation
                     this.actor = actor;
                 }
 
-                ValueTask IActorRef.SendAsync(IList context, CancellationToken token)
+                ValueTask IActorRef.SendAsync(IContext context, CancellationToken token)
                 {
                     Send(context, token);
 
                     return default;
                 }
 
-                public void Send(IList context, CancellationToken token)
+                public void Send(IContext context, CancellationToken token)
                 {
                     ArgumentNullException.ThrowIfNull(context, nameof(context));
 
@@ -196,21 +198,16 @@ namespace Attractor.Implementation
                     });
                 }
 
-                private IActor DecorateFromContext(IList context)
+                private static IActor Decorate(IActor actor, KeyValuePair<object, object> pair)
                 {
-                    var decoratee = actor;
-                    
-                    foreach (var item in context)
+                    if (pair.Value is not IActorDecorator decorator)
                     {
-                        if (item is IActorDecorator decorator)
-                        {
-                            decorator.Decorate(decoratee);
-
-                            decoratee = decorator;
-                        }
+                        return actor;
                     }
 
-                    return decoratee;
+                    decorator.Decorate(actor);
+
+                    return decorator;
                 }
 
                 private void BeforeProcessing()
@@ -218,17 +215,18 @@ namespace Attractor.Implementation
                     Interlocked.CompareExchange(ref state, Processing, Waiting);
                 }
 
-                private async ValueTask ProcessAsync(IList context)
+                private async ValueTask ProcessAsync(IContext context)
                 {
                     try
                     {
                         BeforeProcessing();
                         
-                        context.Set<PID, IAddress, IActorSystem, IActorProcess>(pid, address, system, this);
+                        context.Set(pid);
+                        context.Set(address);
+                        context.Set<IActorSystem>(system);
+                        context.Set<IActorProcess>(this);
 
-                        var result = DecorateFromContext(context);
-
-                        await result.OnReceiveAsync(context, system.token);
+                        await context.Aggregate(actor, decorator).OnReceiveAsync(context, system.token);
                     }
                     finally
                     {
@@ -284,7 +282,7 @@ namespace Attractor.Implementation
                     return Interlocked.Read(ref state) == Collecting;
                 }
 
-                private readonly record struct ProcessMessageCommand(ActorProcess Process, IList Context) : ICommand
+                private readonly record struct ProcessMessageCommand(ActorProcess Process, IContext Context) : ICommand
                 {
                     ValueTask ICommand.ExecuteAsync()
                     {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,7 +24,7 @@ namespace Attractor.Implementation
                 state = new State(this, decoratee);
             }
 
-            ValueTask IActorRef.SendAsync(IList context, CancellationToken token)
+            ValueTask IActorRef.SendAsync(IContext context, CancellationToken token)
             {
                 return Volatile.Read(ref state).SendAsync(context, token);
             }
@@ -32,7 +33,7 @@ namespace Attractor.Implementation
             {
                 private const int Processing = 0;
                 private const int Stopped = 1;
-                
+
                 private readonly RefreshDecorator parent;
                 private readonly IActorRef actorRef;
 
@@ -45,19 +46,18 @@ namespace Attractor.Implementation
                     this.actorRef = actorRef;
                 }
 
-                public ValueTask SendAsync(IList context, CancellationToken token)
+                public ValueTask SendAsync(IContext context, CancellationToken token)
                 {
-                    if (!context.Contains(this))
-                    {
-                        context.Add(this);
-                    }
-                    
+                    context[this] = this;
+
                     return actorRef.SendAsync(context, token);
                 }
 
-                ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
+                ValueTask IActor.OnReceiveAsync(IContext context, CancellationToken token)
                 {
-                    var (process, system, address) = context.Find<IActorProcess, IActorSystem, IAddress>();
+                    var process = context.Get<IActorProcess>();
+                    var system = context.Get<IActorSystem>();
+                    var address = context.Get<IAddress>();
 
                     if (process.IsCollecting() && Interlocked.CompareExchange(ref state, Stopped, Processing) == Processing)
                     {
@@ -90,7 +90,7 @@ namespace Attractor.Implementation
             private Timer timer;
             private IActor decoratee;
             private bool needStopAndRestart;
-            
+
             public ReceivingTimeoutDecorator(TimeSpan timeout, IMessageFilter filter)
             {
                 this.timeout = timeout;
@@ -102,7 +102,7 @@ namespace Attractor.Implementation
                 decoratee = value;
             }
 
-            private async ValueTask BeforeProcessingAsync(IList context, CancellationToken token)
+            private async ValueTask BeforeProcessingAsync(IContext context, CancellationToken token)
             {
                 needStopAndRestart = filter == null || await filter.IsMatchAsync(context, token);
 
@@ -115,12 +115,12 @@ namespace Attractor.Implementation
                 }
             }
 
-            async ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
+            async ValueTask IActor.OnReceiveAsync(IContext context, CancellationToken token)
             {
                 try
                 {
                     await BeforeProcessingAsync(context, token);
-                    
+
                     await decoratee.OnReceiveAsync(context, token);
                 }
                 finally
@@ -129,9 +129,9 @@ namespace Attractor.Implementation
                 }
             }
 
-            private void AfterProcessing(IList context)
+            private void AfterProcessing(IContext context)
             {
-                var process = context.Find<IActorProcess>();
+                var process = context.Get<IActorProcess>();
 
                 if (process == null)
                 {
@@ -189,11 +189,11 @@ namespace Attractor.Implementation
                 {
                     return;
                 }
-                
+
                 timer = new Timer(
-                    Callback, 
+                    Callback,
                     process,
-                    dueTime, 
+                    dueTime,
                     Timeout.InfiniteTimeSpan);
             }
 
@@ -219,236 +219,124 @@ namespace Attractor.Implementation
             }
         }
 
-        public static void Set<T>(this IList context, T value) where T : class
+        public static void Set<T>(this IContext context, T value) where T : class
         {
-            context.Set(value, (NonSettable)null, (NonSettable)null, (NonSettable)null);
-        }
-
-        public static void Set<T1, T2>(
-            this IList context, 
-            T1 first,
-            T2 second) 
-            where T1 : class
-            where T2 : class
-        {
-            context.Set(first, second, (NonSettable)null, (NonSettable)null);
-        }
-
-        public static void Set<T1, T2, T3>(
-            this IList context, 
-            T1 first,
-            T2 second,
-            T3 third) 
-            where T1 : class
-            where T2 : class
-            where T3 : class
-        {
-            context.Set(first, second, third, (NonSettable)null);
-        }
-
-        public static void Set<T1, T2, T3, T4>(
-            this IList context, 
-            T1 first,
-            T2 second,
-            T3 third,
-            T4 fourth) 
-            where T1 : class
-            where T2 : class
-            where T3 : class
-            where T4 : class
-        {
-            var isFirstSet = first is T2 or T3 or T4 or NonSettable;
-            var isSecondSet = second is T3 or T4 or NonSettable;
-            var isThirdSet = third is T4 or NonSettable;
-            var isFourthSet = fourth is NonSettable;
-            
-            for (int i = 0; i < context.Count; i++)
+            if (value == null)
             {
-                ProcessSet(context, i, first, ref isFirstSet);
-                ProcessSet(context, i, second, ref isSecondSet);
-                ProcessSet(context, i, third, ref isThirdSet);
-                ProcessSet(context, i, fourth, ref isFourthSet);
-            }
-
-            ProcessAdd(context, first, isFirstSet);
-            ProcessAdd(context, second, isSecondSet);
-            ProcessAdd(context, third, isThirdSet);
-            ProcessAdd(context, fourth, isFourthSet);
-        }
-
-        private static void ProcessSet<T>(IList context, int index, T value, ref bool isSet)
-        {
-            if (context[index] is not T)
-            {
-                return;
-            }
-
-            if (isSet)
-            {
-                context[index] = null;
+                context.Remove(typeof(T));
             }
             else
             {
-                context[index] = value;
-
-                isSet = true;
+                context[typeof(T)] = value;
             }
         }
 
-        private static void ProcessAdd<T>(IList context, T value, bool isSet)
+        public static T Get<T>(this IContext context) where T : class
         {
-            if (!isSet)
+            if (context.TryGetValue(typeof(T), out var result) && result is T typed)
             {
-                context.Add(value);
+                return typed;
             }
+
+            return null;
         }
 
-        private record NonSettable();
-
-        public static (T1 first, T2 second, T3 third, T4 fourth) Find<T1, T2, T3, T4>(this IList context) 
-            where T1 : class
-            where T2 : class
-            where T3 : class
-            where T4 : class
+        public static T Aggregate<T>(this IContext context, T accumulator, Func<T, KeyValuePair<object, object>, T> action)
         {
-            (T1 first, T2 second, T3 third, T4 fourth) result = default;
+            var result = accumulator;
             
-            foreach (var item in context)
+            if (context is Dictionary<object, object> dictionary)
             {
-                if (result.first is null && item is T1 first)
+                foreach (var pair in dictionary)
                 {
-                    result.first = first;
+                    result = action(result, pair);
                 }
-
-                if (result.second is null && item is T2 second)
+            }
+            else
+            {
+                foreach (var pair in context)
                 {
-                    result.second = second;
-                }
-
-                if (result.third is null && item is T3 third)
-                {
-                    result.third = third;
-                }
-
-                if (result.fourth is null && item is T4 fourth)
-                {
-                    result.fourth = fourth;
+                    result = action(result, pair);
                 }
             }
 
             return result;
         }
 
-        public static (T1 first, T2 second, T3 third) Find<T1, T2, T3>(this IList context) 
-            where T1 : class
-            where T2 : class
-            where T3 : class
-        {
-            var result = Find<T1, T2, T3, object>(context);
-
-            return (result.first, result.second, result.third);
-        }
-
-        public static (T1 first, T2 second) Find<T1, T2>(this IList context) 
-            where T1 : class
-            where T2 : class
-        {
-            var result = Find<T1, T2, object, object>(context);
-
-            return (result.first, result.second);
-        }
-
-        public static T Find<T>(this IList context) where T : class
-        {
-            var result = Find<T, object, object, object>(context);
-
-            return result.first;
-        }
-
-        public static void Chain(this IActorBuilder builder, IActor actor)
+        public static void Chain(this IActorBuilder builder, Action<IActorBuilder> configuration)
         {
             ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+            ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
 
-            builder.Decorate(() => Actor.FromStrategy(async (next, context, token) =>
+            var current = new ActorBuilder();
+
+            configuration(current);
+
+            builder.Decorate(() =>
             {
-                await next(context, token);
-                await actor.OnReceiveAsync(context, token);
-            }));
+                var result = current.Build();
+
+                return Actor.FromStrategy(async (next, context, token) =>
+                {
+                    await next(context, token);
+                    await result.OnReceiveAsync(context, token);
+                });
+            });
         }
 
-        public static void Start(this IActorBuilder builder, IActor actor)
+        public static void OnStart(this IActorBuilder builder, Action<IActorBuilder> configuration)
+        {
+            ChainIf(builder, configuration, process => process.IsStarting());
+        }
+
+        public static void OnStop(this IActorBuilder builder, Action<IActorBuilder> configuration)
+        {
+            ChainIf(builder, configuration, process => process.IsStopping());
+        }
+
+        public static void OnActive(this IActorBuilder builder, Action<IActorBuilder> configuration)
+        {
+            ChainIf(builder, configuration, process => process.IsActive());
+        }
+
+        public static void OnCollect(this IActorBuilder builder, Action<IActorBuilder> configuration)
+        {
+            ChainIf(builder, configuration, process => process.IsCollecting());
+        }
+
+        private static void ChainIf(IActorBuilder builder, Action<IActorBuilder> configuration, Predicate<IActorProcess> condition)
         {
             ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+            ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
+            ArgumentNullException.ThrowIfNull(condition, nameof(condition));
 
-            builder.Chain(new ProcessActor(OnStart: actor.OnReceiveAsync));
-        }
-
-        public static void Active(this IActorBuilder builder, IActor actor)
-        {
-            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
-
-            builder.Chain(new ProcessActor(OnActive: actor.OnReceiveAsync));
-        }
-
-        public static void Stop(this IActorBuilder builder, IActor actor)
-        {
-            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
-
-            builder.Chain(new ProcessActor(OnStop: actor.OnReceiveAsync));
-        }
-
-        public static void Collect(this IActorBuilder builder, IActor actor)
-        {
-            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-            ArgumentNullException.ThrowIfNull(actor, nameof(actor));
-
-            builder.Chain(new ProcessActor(OnCollect: actor.OnReceiveAsync));
-        }
-
-        private record ProcessActor(
-            OnReceive OnStart = null,
-            OnReceive OnStop = null,
-            OnReceive OnActive = null,
-            OnReceive OnCollect = null
-        ) : IActor
-        {
-            async ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
+            builder.Chain(current =>
             {
-                var process = context.Find<IActorProcess>();
+                configuration(current);
 
-                if (process == null)
+                current.Decorate(() => Actor.FromStrategy(async (next, context, token) =>
                 {
-                    return;
-                }
+                    var process = context.Get<IActorProcess>();
 
-                if (process.IsStarting())
-                {
-                    await CallAsync(OnStart, context, token);
-                    await CallAsync(OnActive, context, token);
-                }
-                else if (process.IsStopping())
-                {
-                    await CallAsync(OnStop, context, token);
-                    await CallAsync(OnActive, context, token);
-                }
-                else if (process.IsActive())
-                {
-                    await CallAsync(OnActive, context, token);
-                }
-                else if (process.IsCollecting())
-                {
-                    await CallAsync(OnCollect, context, token);
-                }
-            }
+                    if (process == null)
+                    {
+                        return;
+                    }
+                    
+                    if (condition(context.Get<IActorProcess>()))
+                    {
+                        await next(context, token);
+                    }
+                }));
+            });
+        }
 
-            ValueTask CallAsync(OnReceive onReceive, IList context, CancellationToken token)
+        public static Action<IActorBuilder> Register<T>(this T actor) where T : class, IActor
+        {
+            return builder =>
             {
-                return onReceive != null ? onReceive(context, token) : default;
-            }
+                builder.Register(() => actor);
+            };
         }
 
         public static IServiceCollection AddActorSystem(

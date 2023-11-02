@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -19,9 +18,33 @@ namespace Attractor.Implementation
             return new Instance<T>(onReceive ?? throw new ArgumentNullException(nameof(onReceive)));
         }
 
+        public static IActor FromPayload<T>(Action<T> onReceive)
+        {
+            ArgumentNullException.ThrowIfNull(onReceive, nameof(onReceive));
+            
+            return FromPayload<T>((value, _) => 
+            {
+                onReceive(value);
+
+                return default;
+            });
+        }
+
         public static IActor FromStrategy(OnReceive onReceive)
         {
             return new Instance(onReceive ?? throw new ArgumentNullException(nameof(onReceive)));
+        }
+
+        public static IActor FromStrategy(Action<IContext> onReceive)
+        {
+            ArgumentNullException.ThrowIfNull(onReceive, nameof(onReceive));
+            
+            return FromStrategy((context, _) => 
+            {
+                onReceive(context);
+
+                return default;
+            });
         }
 
         public static IActor FromBuilder(Action<IActorBuilder> configuration)
@@ -59,12 +82,12 @@ namespace Attractor.Implementation
                 decoratee = value;
             }
 
-            private ValueTask OnActorReceiveAsync(IList context, CancellationToken token)
+            private ValueTask OnActorReceiveAsync(IContext context, CancellationToken token)
             {
                 return decoratee == null ? default : decoratee.OnReceiveAsync(context, token);
             }
 
-            ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
+            ValueTask IActor.OnReceiveAsync(IContext context, CancellationToken token)
             {
                 return onReceive != null ? onReceive(onActorReceive, context, token) : onActorReceive(context, token);
             }
@@ -72,7 +95,7 @@ namespace Attractor.Implementation
 
         private record Instance(OnReceive OnReceive) : IActor
         {
-            ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
+            ValueTask IActor.OnReceiveAsync(IContext context, CancellationToken token)
             {
                 return OnReceive != null ? OnReceive(context, token) : default;
             }
@@ -83,7 +106,7 @@ namespace Attractor.Implementation
             private TPayload acceptedValue;
             private bool isAccepted;
             
-            ValueTask IActor.OnReceiveAsync(IList context, CancellationToken token)
+            ValueTask IActor.OnReceiveAsync(IContext context, CancellationToken token)
             {
                 if (!TryAccept(context))
                 {
@@ -93,12 +116,12 @@ namespace Attractor.Implementation
                 return OnReceive != null ? OnReceive(acceptedValue, token) : default;
             }
 
-            private bool TryAccept(IList context)
+            private bool TryAccept(IContext context)
             {
                 isAccepted = false;
                 acceptedValue = default;
                 
-                var payload = context.Find<IPayload>();
+                var payload = context.Get<IPayload>();
 
                 if (payload == null)
                 {
@@ -124,9 +147,9 @@ namespace Attractor.Implementation
         {
             IActorRef collector = null;
 
-            async ValueTask CollectAsync(IList context, CancellationToken token)
+            async ValueTask CollectAsync(IContext context, CancellationToken token)
             {
-                var process = context.Find<IActorProcess>();
+                var process = context.Get<IActorProcess>();
 
                 if (!process.IsCollecting())
                 {
@@ -140,7 +163,8 @@ namespace Attractor.Implementation
 
                 if (collector == null)
                 {
-                    var (system, address) = context.Find<IActorSystem, IAddress>();
+                    var system = context.Get<IActorSystem>();
+                    var address = context.Get<IAddress>();
 
                     collector = system.Refer(address);
                 }

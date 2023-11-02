@@ -13,17 +13,12 @@ namespace Attractor.Tests.Unit
             var context = Context.Default();
             var address = Address.FromString("test");
 
-            system.Register(Address.FromExact(address), builder =>
+            system.Register(Address.FromExact(address), Actor.FromPayload<string>(str => 
             {
-                builder.Register(() => Actor.FromPayload<string>((str, _) => 
-                {
-                    received = str == message;
+                received = str == message;
 
-                    competion.SetResult();
-                    
-                    return default;
-                }));
-            });
+                competion.SetResult();
+            }).Register());
 
             context.Set(Payload.From(message));
         
