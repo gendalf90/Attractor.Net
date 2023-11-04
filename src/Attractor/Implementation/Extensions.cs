@@ -241,28 +241,6 @@ namespace Attractor.Implementation
             return null;
         }
 
-        public static T Aggregate<T>(this IContext context, T accumulator, Func<T, KeyValuePair<object, object>, T> action)
-        {
-            var result = accumulator;
-            
-            if (context is Dictionary<object, object> dictionary)
-            {
-                foreach (var pair in dictionary)
-                {
-                    result = action(result, pair);
-                }
-            }
-            else
-            {
-                foreach (var pair in context)
-                {
-                    result = action(result, pair);
-                }
-            }
-
-            return result;
-        }
-
         public static void Chain(this IActorBuilder builder, Action<IActorBuilder> configuration)
         {
             ArgumentNullException.ThrowIfNull(builder, nameof(builder));

@@ -2,8 +2,6 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Collections;
-using System.Linq;
 
 namespace Attractor.Implementation
 {
@@ -162,19 +160,22 @@ namespace Attractor.Implementation
                 
                 private readonly PID pid = PID.Generate();
                 private readonly CommandQueue<ProcessMessageCommand> commands = new();
-                private readonly Func<IActor, KeyValuePair<object, object>, IActor> decorator = Decorate;
 
+                private readonly Action<KeyValuePair<object, object>> decorator;
                 private readonly ActorSystemImpl system;
                 private readonly IAddress address;
                 private readonly IActor actor;
 
                 private long state = Starting;
+                private IActor decoratee;
 
                 public ActorProcess(ActorSystemImpl system, IAddress address, IActor actor)
                 {
                     this.system = system;
                     this.address = address;
                     this.actor = actor;
+
+                    decorator = Decorate;
                 }
 
                 ValueTask IActorRef.SendAsync(IContext context, CancellationToken token)
@@ -198,16 +199,21 @@ namespace Attractor.Implementation
                     });
                 }
 
-                private static IActor Decorate(IActor actor, KeyValuePair<object, object> pair)
+                private void Decorate(IContext context)
                 {
-                    if (pair.Value is not IActorDecorator decorator)
+                    decoratee = actor;
+
+                    context.ForEach(decorator);
+                }
+
+                private void Decorate(KeyValuePair<object, object> pair)
+                {
+                    if (pair.Value is IActorDecorator decorator)
                     {
-                        return actor;
+                       decorator.Decorate(decoratee);
+
+                        decoratee = decorator;
                     }
-
-                    decorator.Decorate(actor);
-
-                    return decorator;
                 }
 
                 private void BeforeProcessing()
@@ -220,18 +226,28 @@ namespace Attractor.Implementation
                     try
                     {
                         BeforeProcessing();
+                        Decorate(context);
+                        Init(context);
                         
-                        context.Set(pid);
-                        context.Set(address);
-                        context.Set<IActorSystem>(system);
-                        context.Set<IActorProcess>(this);
-
-                        await context.Aggregate(actor, decorator).OnReceiveAsync(context, system.token);
+                        await ReceiveAsync(context);
                     }
                     finally
                     {
                         AfterProcessing();
                     }
+                }
+
+                private void Init(IContext context)
+                {
+                    context.Set(pid);
+                    context.Set(address);
+                    context.Set<IActorSystem>(system);
+                    context.Set<IActorProcess>(this);
+                }
+
+                private ValueTask ReceiveAsync(IContext context)
+                {
+                    return decoratee.OnReceiveAsync(context, system.token);
                 }
 
                 private void AfterProcessing()

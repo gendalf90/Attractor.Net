@@ -46,8 +46,17 @@ namespace Attractor.Implementation
             }
         }
 
-        private class DefaultContext() : Dictionary<object, object>(DefaultCapacity), IContext;
+        private class DefaultContext() : Dictionary<object, object>(DefaultCapacity), IContext
+        {
+            void IContext.ForEach(Action<KeyValuePair<object, object>> action)
+            {
+                foreach (var item in this)
+                {
+                    action(item);
+                }
+            }
+        }
 
-        private class SystemContext() : Dictionary<object, object>(DefaultCapacity), IContext;
+        private class SystemContext : DefaultContext;
     }
 }
