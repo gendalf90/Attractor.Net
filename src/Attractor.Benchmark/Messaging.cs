@@ -9,109 +9,74 @@ namespace Attractor.Benchmark
     [MemoryDiagnoser]
     public class Messaging
     {
-        [Params(100000, 1000000, 10000000)]
-        public int Count { get; set; }
+        public const int SyncReceiveCount = 1000000;
+
+        public const int AsyncReceiveCount = 100000;
 
         [Benchmark]
-        public async Task RunAttractor()
+        public async Task SyncReceiveInAttractor()
         {
             var completion = new TaskCompletionSource();
             var system = Implementation.ActorSystem.Create();
-            var pingContext = Context.Default();
-            var pongContext = Context.Default();
-            var payload = Payload.FromString("test");
+            var context = Context.Default();
+            var address = Address.FromString("test");
+            var message = "test";
+            var counter = 0;
 
-            system.Register(Address.FromString(addr => addr == "pong"), builder =>
+            system.Register(Address.FromExact(address), Actor.FromPayload<string>(value => 
             {
-                var counter = 0;
+                if (value != message)
+                {
+                    return;
+                }
                 
-                builder.RegisterActor(() => Actor.FromString((_, _) => 
+                if (++counter == SyncReceiveCount)
                 {
-                    if (++counter == Count)
-                    {
-                        completion.SetResult();
-                    }
+                    completion.SetResult();
+                }
+            }).Register());
 
-                    return default;
-                }));
-            });
+            var actor = system.Refer(address);
 
-            var pong = system.Refer(Address.FromString("pong"));
+            context.Set(Payload.From(message));
 
-            pongContext.Set(payload);
-
-            system.Register(Address.FromString(addr => addr == "ping"), builder =>
+            for (int i = 0; i < SyncReceiveCount; i++)
             {
-                builder.RegisterActor(() => Actor.FromStrategy((context, token) => 
-                {
-                    return pong.PostAsync(pongContext, token);
-                }));
-            });
-
-            var ping = system.Refer(Address.FromString("ping"));
-
-            pingContext.Set(payload);
-            
-            for (int i = 0; i < Count; i++)
-            {
-                await ping.PostAsync(pingContext);
+                await actor.SendAsync(context);
             }
 
             await completion.Task;
         }
         
         [Benchmark]
-        public async Task RunAkka()
+        public async Task SyncReceiveInAkka()
         {
             var completion = new TaskCompletionSource();
-            var system = Akka.Actor.ActorSystem.Create("PingPong");
-            var pong = system.ActorOf(Akka.Actor.Props.Create(() => new PongAkkaActor(completion, Count)));
-            var ping = system.ActorOf(Akka.Actor.Props.Create(() => new PingAkkaActor(pong)));
+            var system = Akka.Actor.ActorSystem.Create("test");
+            var message = "test";
+            var actor = system.ActorOf(Akka.Actor.Props.Create(() => new SyncReceiveAkkaActor(completion, SyncReceiveCount, message)));
             
-            for (int i = 0; i < Count; i++)
+            for (int i = 0; i < SyncReceiveCount; i++)
             {
-                Akka.Actor.ActorRefImplicitSenderExtensions.Tell(ping, "test");
+                Akka.Actor.ActorRefImplicitSenderExtensions.Tell(actor, message);
             }
 
             await completion.Task;
         }
 
-        [Benchmark]
-        public async Task RunProtoActor()
+        private class SyncReceiveAkkaActor : Akka.Actor.ReceiveActor
         {
-            var completion = new TaskCompletionSource();
-            var system = new Proto.ActorSystem();
-            var pongProps = Props.FromProducer(() => new PongProtoActor(completion, Count));
-            var pingProps = Props.FromProducer(() => new PingProtoActor(system.Root.Spawn(pongProps)));
-            var ping = system.Root.Spawn(pingProps);
-
-            for (int i = 0; i < Count; i++)
-            {
-                system.Root.Send(ping, "test");
-            }
-
-            await completion.Task;
-        }
-
-        private class PingAkkaActor : Akka.Actor.ReceiveActor
-        {
-            public PingAkkaActor(Akka.Actor.IActorRef pong)
-            {
-                Receive<string>(message =>
-                {
-                    Akka.Actor.ActorRefImplicitSenderExtensions.Tell(pong, message);
-                });
-            }
-        }
-
-        private class PongAkkaActor : Akka.Actor.ReceiveActor
-        {
-            private int counter;
+            private int counter = 0;
             
-            public PongAkkaActor(TaskCompletionSource completion, int count)
+            public SyncReceiveAkkaActor(TaskCompletionSource completion, int count, string message)
             {
-                Receive<string>(message =>
+                Receive<string>(value =>
                 {
+                    if (value != message)
+                    {
+                        return;
+                    }
+                    
                     if (++counter == count)
                     {
                         completion.SetResult();
@@ -120,57 +85,142 @@ namespace Attractor.Benchmark
             }
         }
 
-        private class PingProtoActor : Proto.IActor
+        [Benchmark]
+        public async Task SyncReceiveInProto()
         {
-            private readonly Proto.PID pong;
-
-            public PingProtoActor(Proto.PID pong)
+            var completion = new TaskCompletionSource();
+            var system = new Proto.ActorSystem();
+            var counter = 0;
+            var message = "test";
+            var props = Props.FromFunc(context =>
             {
-                this.pong = pong;
-            }
-
-            public Task ReceiveAsync(Proto.IContext context)
-            {
-                switch (context.Message)
+                if (context.Message is not string str || str != message)
                 {
-                    case string msg:
-                        context.Send(pong, msg);
-                        break;
+                    return Task.CompletedTask;
                 }
-
-                return Task.CompletedTask;
-            }
-        }
-
-        private class PongProtoActor : Proto.IActor
-        {
-            private readonly TaskCompletionSource completion;
-            private readonly int count;
-
-            public PongProtoActor(TaskCompletionSource completion, int count)
-            {
-                this.completion = completion;
-                this.count = count;
-            }
-
-            private int counter;
-            
-            public Task ReceiveAsync(Proto.IContext context)
-            {
-                switch (context.Message)
-                {
-                    case string:
-                        counter++;
-                        break;
-                }
-
-                if (counter == count)
+                
+                if (++counter == SyncReceiveCount)
                 {
                     completion.SetResult();
                 }
 
                 return Task.CompletedTask;
+            });
+            var actor = system.Root.Spawn(props);
+
+            for (int i = 0; i < SyncReceiveCount; i++)
+            {
+                system.Root.Send(actor, message);
             }
+
+            await completion.Task;
+        }
+
+        [Benchmark]
+        public async Task AsyncReceiveInAttractor()
+        {
+            var completion = new TaskCompletionSource();
+            var system = Implementation.ActorSystem.Create();
+            var address = Address.FromString("test");
+            var context = Context.Default();
+            var message = "test";
+            var counter = 0;
+
+            system.Register(Address.FromExact(address), Actor.FromPayload<string>(async (value, _) => 
+            {
+                if (value != message)
+                {
+                    return;
+                }
+                
+                await Task.Yield();
+
+                if (++counter == AsyncReceiveCount)
+                {
+                    completion.SetResult();
+                }
+            }).Register());
+
+            var actor = system.Refer(address);
+
+            context.Set(Payload.From(message));
+
+            for (int i = 0; i < AsyncReceiveCount; i++)
+            {
+                await actor.SendAsync(context);
+            }
+
+            await completion.Task;
+        }
+        
+        [Benchmark]
+        public async Task AsyncReceiveInAkka()
+        {
+            var completion = new TaskCompletionSource();
+            var system = Akka.Actor.ActorSystem.Create("test");
+            var message = "test";
+            var actor = system.ActorOf(Akka.Actor.Props.Create(() => new AsyncReceiveAkkaActor(completion, AsyncReceiveCount, message)));
+            
+            for (int i = 0; i < AsyncReceiveCount; i++)
+            {
+                Akka.Actor.ActorRefImplicitSenderExtensions.Tell(actor, message);
+            }
+
+            await completion.Task;
+        }
+
+        private class AsyncReceiveAkkaActor : Akka.Actor.ReceiveActor
+        {
+            private int counter = 0;
+            
+            public AsyncReceiveAkkaActor(TaskCompletionSource completion, int count, string message)
+            {
+                ReceiveAsync<string>(async value =>
+                {
+                    if (value != message)
+                    {
+                        return;
+                    }
+
+                    await Task.Yield();
+                    
+                    if (++counter == count)
+                    {
+                        completion.SetResult();
+                    }
+                });
+            }
+        }
+
+        [Benchmark]
+        public async Task AsyncReceiveInProto()
+        {
+            var completion = new TaskCompletionSource();
+            var system = new Proto.ActorSystem();
+            var counter = 0;
+            var message = "test";
+            var props = Props.FromFunc(async context =>
+            {
+                if (context.Message is not string str || str != message)
+                {
+                    return;
+                }
+
+                await Task.Yield();
+                
+                if (++counter == AsyncReceiveCount)
+                {
+                    completion.SetResult();
+                }
+            });
+            var actor = system.Root.Spawn(props);
+
+            for (int i = 0; i < AsyncReceiveCount; i++)
+            {
+                system.Root.Send(actor, message);
+            }
+
+            await completion.Task;
         }
     }
 }
