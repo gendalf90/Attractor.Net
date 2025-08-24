@@ -5,12 +5,12 @@ namespace Attractor.Implementation
     public sealed class PID : IEquatable<PID>
     {
         private readonly Guid guid;
-        
+
         private PID(Guid guid)
         {
             this.guid = guid;
         }
-        
+
         bool IEquatable<PID>.Equals(PID other)
         {
             return Equals(other);

@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
@@ -14,13 +13,13 @@ namespace Attractor.Implementation
             Touch();
         }
         
-        protected override async ValueTask ProcessAsync()
+        protected override void Process()
         {
             while (queue.TryDequeue(out var command))
             {
                 try
                 {
-                    await command.ExecuteAsync();
+                    command.Execute();
                 }
                 catch
                 {

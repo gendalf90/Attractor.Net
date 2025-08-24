@@ -1,10 +1,7 @@
-using System;
-using System.Collections.Generic;
-
 namespace Attractor
 {
-    public interface IContext : IDictionary<object, object>
+    public interface IContext
     {
-        void ForEach(Action<KeyValuePair<object, object>> action);
+        T Get<T>() where T : class;
     }
 }

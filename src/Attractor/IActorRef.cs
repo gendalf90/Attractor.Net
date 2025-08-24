@@ -5,6 +5,6 @@ namespace Attractor
 {
     public interface IActorRef
     {
-        ValueTask SendAsync(IContext context, CancellationToken token = default);
+        Task SendAsync(IContext context, CancellationToken token = default);
     }
 }

@@ -2,5 +2,8 @@
 
 namespace Attractor
 {
-    public interface IAddress : IVisitable, IEquatable<IAddress>;
+    public interface IAddress : IEquatable<IAddress>
+    {
+        ReadOnlySpan<byte> AsSpan();
+    }
 }

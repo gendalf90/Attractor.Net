@@ -1,10 +1,13 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace Attractor
 {
-    public interface IActor
+    public interface IActor : IAsyncDisposable
     {
-        ValueTask OnReceiveAsync(IContext context, CancellationToken token = default);
+        //OfferStatus OfferMessage(IContext context, CancellationToken token = default);
+
+        Task OnReceiveAsync(IContext context, CancellationToken token = default);
     }
 }

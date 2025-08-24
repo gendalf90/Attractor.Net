@@ -1,0 +1,53 @@
+{
+	"Class with namespace": {
+		"prefix": "nclass",
+		"body": [
+			"namespace ${TM_DIRECTORY/(.*[\\\\\\/]src[\\\\\\/])|([\\\\\\/])/${2:+.}/g};",
+			"",
+			"public class ${TM_FILENAME_BASE}",
+			"{",
+			"    $0",
+			"}"
+		],
+		"description": "Создает класс внутри namespace"
+	},
+
+	"Struct with namespace": {
+		"prefix": "nstruct",
+		"body": [
+			"namespace ${TM_DIRECTORY/(.*[\\\\\\/]src[\\\\\\/])|([\\\\\\/])/${2:+.}/g};",
+			"",
+			"public struct ${TM_FILENAME_BASE}",
+			"{",
+			"    $0",
+			"}"
+		],
+		"description": "Создает структуру внутри namespace"
+	},
+
+	"Interface with namespace": {
+		"prefix": "ninterface",
+		"body": [
+			"namespace ${TM_DIRECTORY/(.*[\\\\\\/]src[\\\\\\/])|([\\\\\\/])/${2:+.}/g};",
+			"",
+			"public interface ${TM_FILENAME_BASE}",
+			"{",
+			"    $0",
+			"}"
+		],
+		"description": "Создает интерфейс внутри namespace"
+	},
+
+	"Enum with namespace": {
+		"prefix": "nenum",
+		"body": [
+			"namespace ${TM_DIRECTORY/(.*[\\\\\\/]src[\\\\\\/])|([\\\\\\/])/${2:+.}/g};",
+			"",
+			"public enum ${TM_FILENAME_BASE}",
+			"{",
+			"    $0",
+			"}"
+		],
+		"description": "Создает enum внутри namespace"
+	}
+}

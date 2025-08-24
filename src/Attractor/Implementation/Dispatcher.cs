@@ -1,5 +1,4 @@
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace Attractor.Implementation
 {
@@ -10,13 +9,13 @@ namespace Attractor.Implementation
 
         private long counter = UnlockValue;
 
-        async void IThreadPoolWorkItem.Execute()
+        void IThreadPoolWorkItem.Execute()
         {
             ResetLock();
             
             try
             {
-                await ProcessAsync();
+                Process();
             }
             catch 
             {
@@ -55,7 +54,7 @@ namespace Attractor.Implementation
             }
         }
 
-        protected abstract ValueTask ProcessAsync();
+        protected abstract void Process();
 
         // private async ValueTask StartProcessingAsync()
         // {

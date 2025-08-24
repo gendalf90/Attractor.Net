@@ -7,7 +7,7 @@ namespace Attractor.Implementation
     public static class Actor
     {
         private static readonly IActor empty = new Instance(null);
-        
+
         public static IActorDecorator FromStrategy(OnReceiveDecorator onReceive)
         {
             return new Decorator(onReceive ?? throw new ArgumentNullException(nameof(onReceive)));
@@ -21,8 +21,8 @@ namespace Attractor.Implementation
         public static IActor FromPayload<T>(Action<T> onReceive)
         {
             ArgumentNullException.ThrowIfNull(onReceive, nameof(onReceive));
-            
-            return FromPayload<T>((value, _) => 
+
+            return FromPayload<T>((value, _) =>
             {
                 onReceive(value);
 
@@ -38,8 +38,8 @@ namespace Attractor.Implementation
         public static IActor FromStrategy(Action<IContext> onReceive)
         {
             ArgumentNullException.ThrowIfNull(onReceive, nameof(onReceive));
-            
-            return FromStrategy((context, _) => 
+
+            return FromStrategy((context, _) =>
             {
                 onReceive(context);
 
@@ -105,7 +105,7 @@ namespace Attractor.Implementation
         {
             private TPayload acceptedValue;
             private bool isAccepted;
-            
+
             ValueTask IActor.OnReceiveAsync(IContext context, CancellationToken token)
             {
                 if (!TryAccept(context))
@@ -120,7 +120,7 @@ namespace Attractor.Implementation
             {
                 isAccepted = false;
                 acceptedValue = default;
-                
+
                 var payload = context.Get<IPayload>();
 
                 if (payload == null)
@@ -170,12 +170,13 @@ namespace Attractor.Implementation
                 }
 
                 await collector.SendAsync(context, token);
-            };
-            
+            }
+            ;
+
             return FromStrategy(async (next, context, token) =>
             {
                 await CollectAsync(context, token);
-                
+
                 await next(context, token);
             });
         }
