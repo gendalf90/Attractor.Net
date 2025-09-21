@@ -1,11 +1,8 @@
 using System;
 
-namespace Attractor
+namespace Attractor;
+
+public interface IActorBuilder
 {
-    public interface IActorBuilder
-    {
-        void Register<T>(Func<T> factory) where T : class, IActor;
-        
-        void Decorate<T>(Func<T> factory) where T : class, IActorDecorator;
-    }
+    void Decorate<T>(Func<T> factory) where T : class, IActor, IDecorator<IActor>;
 }

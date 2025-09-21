@@ -9,7 +9,7 @@
 			"    $0",
 			"}"
 		],
-		"description": "Создает класс внутри namespace"
+		"description": "Create a class with namespace"
 	},
 
 	"Struct with namespace": {
@@ -22,7 +22,7 @@
 			"    $0",
 			"}"
 		],
-		"description": "Создает структуру внутри namespace"
+		"description": "Create a struct with namespace"
 	},
 
 	"Interface with namespace": {
@@ -35,7 +35,7 @@
 			"    $0",
 			"}"
 		],
-		"description": "Создает интерфейс внутри namespace"
+		"description": "Create an interface with namespace"
 	},
 
 	"Enum with namespace": {
@@ -48,6 +48,6 @@
 			"    $0",
 			"}"
 		],
-		"description": "Создает enum внутри namespace"
+		"description": "Create an enum with namespace"
 	}
 }

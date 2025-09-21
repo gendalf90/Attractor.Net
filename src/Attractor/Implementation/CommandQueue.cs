@@ -2,11 +2,11 @@ using System.Collections.Concurrent;
 
 namespace Attractor.Implementation
 {
-    internal sealed class CommandQueue<T> : Dispatcher where T : ICommand
+    internal class CommandQueue : Dispatcher, ICommandQueueFeature
     {
-        private readonly ConcurrentQueue<T> queue = new();
+        private readonly ConcurrentQueue<ICommand> queue = new();
 
-        public void Schedule(T command)
+        public void Schedule(ICommand command)
         {
             queue.Enqueue(command);
 

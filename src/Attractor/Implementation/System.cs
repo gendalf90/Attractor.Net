@@ -1,245 +1,218 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 
 namespace Attractor.Implementation;
 
 public static class System
 {
-    public static ISystem Create(IQueue queue, IScheduler scheduler, ILogger logger)
+    public static void AddSystem(this IActorBuilder builder)
     {
-        return new SystemImpl();
+        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+
+        builder.Decorate(() => new InstanceDecorator());
     }
 
-    private sealed class SystemImpl : ISystem
+    public static void AddRegistration(this IContextBuilder builder, IAddressPolicy policy, IProps properties)
     {
-        private readonly CommandQueue<ICommand> commands = new();
-        private readonly LinkedList<ProcessBuilder> builders = new();
-        private readonly Dictionary<IAddress, Process> processes = new();
+        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+        ArgumentNullException.ThrowIfNull(policy, nameof(policy));
+        ArgumentNullException.ThrowIfNull(properties, nameof(properties));
 
-        private readonly IQueue queue;
-        private readonly IScheduler scheduler;
-        private readonly ILogger logger;
+        builder.Set(new Registration(policy, properties));
+    }
 
+    private class Registration(IAddressPolicy policy, IProps properties)
+    {
+        public bool IsMatch(IAddress address)
+        {
+            return policy.IsMatch(address);
+        }
+
+        public Process Build(IAddress address, IAsyncDisposable disposing, CancellationToken token)
+        {
+            var actor = actorBuilder.Build();
+
+            return new Process(address, actor, disposing, token);
+        }
+    }
+
+    private class InstanceDecorator : IActor, IDecorator<IActor>
+    {
+        private readonly LinkedList<RegisterMessage> registrations = new();
+        private readonly Dictionary<IAddress, Process> children = new();
+
+        private IActor decoratee;
+
+        void IDecorator<IActor>.Decorate(IActor value)
+        {
+            decoratee = value;
+        }
+
+        ValueTask IAsyncDisposable.DisposeAsync()
+        {
+            throw new NotImplementedException();
+        }
+
+        Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
+        {
+            throw new NotImplementedException();
+        }
+
+        Task IActor.OnStartAsync(IContext context, CancellationToken token)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+
+
+
+
+    public static ISystem Create(CancellationToken token = default)
+    {
+        return new SystemProcess(token);
+    }
+
+    private class SystemProcess : ISystem
+    {
+        private readonly CommandQueue commands = new();
+        private readonly LinkedList<RegisterMessage> registrations = new();
+        private readonly Dictionary<IAddress, Process> children = new();
+
+        private State state;
         private CancellationTokenSource cancellation;
-        private Task processingTask;
-        private Task stoppingTask;
+        private CancellationTokenRegistration registration;
+        private Task disposingTask;
 
-        public void Register(IAddressPolicy policy, Action<IActorBuilder> configuration = null)
+        public SystemProcess(CancellationToken token)
         {
-            ArgumentNullException.ThrowIfNull(policy, nameof(policy));
-
-            var builder = new ActorBuilder();
-
-            configuration?.Invoke(builder);
-
-            commands.Schedule(Command.Create(() =>
-            {
-                builders.AddFirst(new ProcessBuilder(policy, builder, this));
-            }));
+            state = State.Started;
+            cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+            registration = cancellation.Token.Register(() => commands.Schedule(RunDisposingCommand));
         }
 
-        private Task<Process> GetOrCreateProcessAsync(IAddress address, IHandle handle)
+        public void Send(IContext context)
         {
-            var completion = new TaskCompletionSource<Process>();
+            var awaiter = context.Get<AwaiterFeature>();
+            var registration = context.Get<RegisterMessage>();
+            var start = context.Get<StartMessage>();
+            var address = context.Get<IAddress>();
 
-            commands.Schedule(Command.Create(() =>
+            if (registration != null)
             {
-                if (cancellation.IsCancellationRequested)
-                {
-                    completion.SetCanceled(cancellation.Token);
-                }
-                else if (processes.TryGetValue(address, out var result))
-                {
-                    completion.SetResult(result);
-                }
-                else
-                {
-                    commands.Schedule(CreateTryBuildProcessCommand(completion, builders.First, address));
-                }
-            }));
+                commands.Schedule(RegisterCommand(awaiter, registration));
+            }
 
-            return completion.Task;
+            if (start != null && address != null)
+            {
+                commands.Schedule(StartProcessCommand(awaiter, address, start));
+            }
         }
 
-        private ICommand CreateTryBuildProcessCommand(TaskCompletionSource<Process> completion, LinkedListNode<ProcessBuilder> node, IAddress address)
+        private ICommand RegisterCommand(AwaiterFeature awaiter, RegisterMessage message) => Command.From(() =>
         {
-            return Command.Create(() =>
+            if (cancellation.IsCancellationRequested)
+            {
+                awaiter?.SetCanceled(cancellation.Token);
+            }
+            else
+            {
+                registrations.AddFirst(message);
+                awaiter?.SetResult();
+            }
+        });
+
+        private ICommand StartProcessCommand(AwaiterFeature awaiter, IAddress address, StartMessage message) => Command.From(() =>
+        {
+            if (cancellation.IsCancellationRequested)
+            {
+                awaiter?.SetCanceled(cancellation.Token);
+            }
+            else if (children.TryGetValue(address, out var result))
+            {
+                message.Complete(result);
+                awaiter?.SetResult();
+            }
+            else
+            {
+                commands.Schedule(BuildProcessCommand(awaiter, address, message, registrations.First));
+            }
+        });
+
+        private ICommand BuildProcessCommand(AwaiterFeature awaiter, IAddress address, StartMessage message, LinkedListNode<RegisterMessage> node)
+        {
+            return Command.From(() =>
             {
                 try
                 {
                     if (cancellation.IsCancellationRequested)
                     {
-                        completion.SetCanceled(cancellation.Token);
+                        awaiter?.SetCanceled(cancellation.Token);
                     }
-                    else if (processes.TryGetValue(address, out var result))
+                    else if (children.TryGetValue(address, out var result))
                     {
-                        completion.SetResult(result);
+                        message.Complete(result);
+                        awaiter?.SetResult();
                     }
                     else if (node == null)
                     {
-                        completion.SetException(new InvalidOperationException());
+                        awaiter?.SetException(new NullReferenceException());
                     }
                     else if (node.Value.IsMatch(address))
                     {
-                        var builder = node.Value;
-                        var awaiter = scheduler.TryAcquireAsync(address, cancellation.Token).GetAwaiter();
-
-                        awaiter.OnCompleted(() =>
+                        var disposing = Disposable.CreateAsync(async () =>
                         {
-                            try
+                            await commands.ScheduleAsync(() =>
                             {
-                                var result = awaiter.GetResult();
-
-                                if (result.Success)
-                                {
-                                    commands.Schedule(CreateBuildProcessCommand(completion, builder, address, result.Result));
-                                }
-                                else
-                                {
-                                    completion.SetException(new InvalidOperationException());
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                completion.SetException(ex);
-                            }
+                                children.Remove(address);
+                            });
                         });
+
+                        var process = node.Value.Build(address, disposing, cancellation.Token);
+
+                        children.Add(address, process);
+                        process.Start();
+                        message.Complete(process);
+                        awaiter?.SetResult();
                     }
                     else
                     {
-                        commands.Schedule(CreateTryBuildProcessCommand(completion, node.Next, address));
+                        commands.Schedule(BuildProcessCommand(awaiter, address, message, node.Next));
                     }
                 }
                 catch (Exception ex)
                 {
-                    completion.SetException(ex);
+                    awaiter?.SetException(ex);
                 }
             });
         }
 
-        private ICommand CreateBuildProcessCommand(TaskCompletionSource<Process> completion, ProcessBuilder builder, IAddress address, IHandle handle)
+        public async ValueTask DisposeAsync()
         {
-            return Command.Create(() =>
-            {
-                if (cancellation.IsCancellationRequested)
-                {
-                    completion.SetCanceled(cancellation.Token);
-                }
-                else if (processes.TryGetValue(address, out var result))
-                {
-                    completion.SetResult(result);
-                }
-                else
-                {
-                    var process = builder.Build(address, handle);
-
-                    processes.Add(address, process);
-                    completion.SetResult(process);
-                }
-            });
+            await commands.ScheduleAsync(RunDisposingCommand);
+            await disposingTask;
         }
 
-        private sealed class ProcessBuilder(IAddressPolicy addressPolicy, ActorBuilder actorBuilder, SystemImpl actorSystem)
+        private ICommand RunDisposingCommand => Command.From(() =>
         {
-            public bool IsMatch(IAddress address)
+            if (state != State.Disposing)
             {
-                return addressPolicy.IsMatch(address);
-            }
-
-            public Process Build(IAddress address, IHandle handle)
-            {
-                var actor = actorBuilder.Build();
-                var disposing = Disposable.CreateAsync(async () =>
-                {
-                    await handle.DisposeAsync();
-
-                    var completion = new TaskCompletionSource();
-
-                    actorSystem.commands.Schedule(Command.Create(() =>
-                    {
-                        actorSystem.processes.Remove(address);
-                        completion.SetResult();
-                    }));
-
-                    await completion.Task;
-                });
-
-                return new Process(actor, disposing, actorSystem.cancellation.Token);
-            }
-        }
-
-        public Task StartAsync(CancellationToken cancellationToken)
-        {
-            var completion = new TaskCompletionSource();
-
-            commands.Schedule(Command.Create(() =>
-            {
-                if (cancellation.IsCancellationRequested)
-                {
-                    completion.SetCanceled(cancellation.Token);
-                }
-                else if (processingTask == null)
-                {
-                    cancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    processingTask = Task.Run(ExecuteAsync);
-
-                    completion.SetResult();
-                }
-            }));
-
-            return completion.Task;
-        }
-
-        private async Task ExecuteAsync()
-        {
-            while (!cancellation.IsCancellationRequested)
-            {
-                try
-                {
-
-                }
-                catch (Exception e)
-                {
-
-                }
-            }
-        }
-
-        public async Task StopAsync(CancellationToken cancellationToken)
-        {
-            var completion = new TaskCompletionSource();
-
-            commands.Schedule(Command.Create(() =>
-            {
+                state = State.Disposing;
                 cancellation.Cancel();
-                completion.SetResult();
-            }));
-
-
-            if (processingTask == null)
-            {
-                return;
+                disposingTask = Task.Run(RunDisposingAsync);
             }
+        });
 
-            cancellation.Cancel();
-
-            await processingTask;
-
-            foreach (var pair in processes)
-            {
-                await pair.Value.Value.DisposeAsync();
-            }
-
-            processes.Clear();
-        }
-
-        private async Task RunStoppingAsync()
+        private async Task RunDisposingAsync()
         {
-
+            using (cancellation)
+            using (registration)
+            {
+                await Task.WhenAll(children.Values.Select(async process => await process.DisposeAsync()));
+            }
         }
     }
 }

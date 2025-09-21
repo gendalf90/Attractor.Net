@@ -6,6 +6,104 @@ namespace Attractor.Implementation
 {
     public static class Actor
     {
+        public static IActorRef Run(IProps properties, CancellationToken token = default)
+        {
+            ArgumentNullException.ThrowIfNull(properties, nameof(properties));
+
+            var builder = new ActorBuilder(new DefaultInstance());
+
+            properties.Configure(builder);
+
+            var actor = builder.Build();
+            var process = new Process(actor, token);
+
+            process.Start();
+
+            return new ActorRef(process);
+        }
+
+        public static void OnReceive(this IActorBuilder builder, DecorateReceive strategy)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.Decorate(() => new DecoratorInstance(onReceive: strategy));
+        }
+
+        public static void OnReceive(this IActorBuilder builder, Receive strategy)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.OnReceive(async (next, context, token) =>
+            {
+                await next(context, token);
+                await strategy(context, token);
+            });
+        }
+
+        public static void OnReceive<T>(this IActorBuilder builder, Receive<T> strategy) where T : class
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.OnReceive(async (context, token) =>
+            {
+                var value = context.Get<T>();
+
+                if (value != null)
+                {
+                    await strategy(value, token);
+                }
+            });
+        }
+
+        private class DefaultInstance : IActor
+        {
+            ValueTask IAsyncDisposable.DisposeAsync()
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
+            {
+                return Task.CompletedTask;
+            }
+
+            Task IActor.OnStartAsync(IContext context, CancellationToken token)
+            {
+                return Task.CompletedTask;
+            }
+        }
+
+        private class DecoratorInstance(
+            DecorateReceive onReceive = null,
+            DecorateReceive onStart = null,
+            DecorateDispose onDispose = null) : IActor, IDecorator<IActor>
+        {
+            private IActor decoratee;
+
+            public void Decorate(IActor value)
+            {
+                decoratee = value;
+            }
+
+            ValueTask IAsyncDisposable.DisposeAsync()
+            {
+                return onDispose == null ? decoratee.DisposeAsync() : onDispose(decoratee.DisposeAsync);
+            }
+
+            Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
+            {
+                return onReceive == null ? decoratee.OnReceiveAsync(context, token) : onReceive(decoratee.OnReceiveAsync, context, token);
+            }
+
+            Task IActor.OnStartAsync(IContext context, CancellationToken token)
+            {
+                return onStart == null ? decoratee.OnStartAsync(context, token) : onStart(decoratee.OnStartAsync, context, token);
+            }
+        }
+
         private static readonly IActor empty = new Instance(null);
 
         public static IActorDecorator FromStrategy(OnReceiveDecorator onReceive)
@@ -58,12 +156,7 @@ namespace Attractor.Implementation
             return builder.Build();
         }
 
-        public static IActor Empty()
-        {
-            return empty;
-        }
-
-        private class Decorator : IActorDecorator
+        private class Decorator : IActor, IDecorator<IActor>
         {
             private readonly OnReceiveDecorator onReceive;
             private readonly OnReceive onActorReceive;

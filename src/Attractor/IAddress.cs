@@ -1,9 +1,5 @@
 ﻿using System;
 
-namespace Attractor
-{
-    public interface IAddress : IEquatable<IAddress>
-    {
-        ReadOnlySpan<byte> AsSpan();
-    }
-}
+namespace Attractor;
+
+public interface IAddress : IPayload, IEquatable<IAddress>;

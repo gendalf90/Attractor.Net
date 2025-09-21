@@ -1,11 +1,8 @@
-﻿using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
+﻿using System;
 
-namespace Attractor
+namespace Attractor;
+
+public interface IPayload
 {
-    public interface IPayload
-    {
-        Task SerializeAsync(Stream stream, CancellationToken token = default);
-    }
+    ReadOnlySpan<byte> AsSpan();
 }

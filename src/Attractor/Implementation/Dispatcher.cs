@@ -2,14 +2,14 @@ using System.Threading;
 
 namespace Attractor.Implementation
 {
-    internal abstract class Dispatcher : IThreadPoolWorkItem
+    internal abstract class Dispatcher
     {
         private const long LockValue = 1;
         private const long UnlockValue = 0;
 
         private long counter = UnlockValue;
 
-        void IThreadPoolWorkItem.Execute()
+        private void Execute(object state)
         {
             ResetLock();
             
@@ -19,7 +19,7 @@ namespace Attractor.Implementation
             }
             catch 
             {
-                // do nothing
+                return;
             }
             finally
             {
@@ -31,54 +31,19 @@ namespace Attractor.Implementation
         {
             if (!TryUnlock())
             {
-                ThreadPool.UnsafeQueueUserWorkItem(this, true);
+                ThreadPool.QueueUserWorkItem(Execute);
             }
         }
-
-        // void IThreadPoolWorkItem.Execute()
-        // {
-        //     StartProcessingAsync().GetAwaiter().UnsafeOnCompleted(() =>
-        //     {
-        //         if (!TryUnlock())
-        //         {
-        //             ThreadPool.UnsafeQueueUserWorkItem(this, true);
-        //         }
-        //     });
-        // }
 
         public void Touch()
         {
             if (TryLock())
             {
-                ThreadPool.UnsafeQueueUserWorkItem(this, true);
+                ThreadPool.QueueUserWorkItem(Execute);
             }
         }
 
         protected abstract void Process();
-
-        // private async ValueTask StartProcessingAsync()
-        // {
-        //     ResetLock();
-            
-        //     try
-        //     {
-        //         await ProcessAsync();
-        //     }
-        //     finally
-        //     {
-        //         if (!TryUnlock())
-        //         {
-        //             ThreadPool.UnsafeQueueUserWorkItem(this, true);
-        //         }
-        //     }
-        // }
-
-        // private async ValueTask StartProcessingAsync()
-        // {
-        //     ResetLock();
-
-        //     await ProcessAsync();
-        // }
 
         private bool TryLock()
         {

@@ -1,7 +1,6 @@
-namespace Attractor
+namespace Attractor;
+
+public interface IContext
 {
-    public interface IContext
-    {
-        T Get<T>() where T : class;
-    }
+    T Get<T>() where T : class;
 }

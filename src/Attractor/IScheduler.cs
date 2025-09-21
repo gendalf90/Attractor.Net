@@ -5,5 +5,5 @@ namespace Attractor;
 
 public interface IScheduler
 {
-    Task<Try<IHandle>> TryAcquireAsync(IAddress address, CancellationToken token = default);
+    Task<Try<IHandle>> TryLockAsync(IAddress address, CancellationToken token = default);
 }

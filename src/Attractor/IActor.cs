@@ -6,7 +6,7 @@ namespace Attractor
 {
     public interface IActor : IAsyncDisposable
     {
-        //OfferStatus OfferMessage(IContext context, CancellationToken token = default);
+        Task OnStartAsync(IContext context, CancellationToken token = default);
 
         Task OnReceiveAsync(IContext context, CancellationToken token = default);
     }

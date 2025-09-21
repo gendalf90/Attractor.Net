@@ -4,15 +4,40 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Attractor.Implementation
 {
     public static class Extensions
     {
+        public static bool IsInitial(this IContext context)
+        {
+            return true;
+        }
+
+        public static bool IsDispose(this IContext context)
+        {
+            return true;
+        }
+        
         public static IActorRef WithRefresh(this IActorRef actorRef)
         {
             return new RefreshDecorator(actorRef);
+        }
+
+        public static async Task SendAsync(this IActorRef actor, IMessage message, CancellationToken token = default)
+        {
+            var awaiter = new RequestAwaiterFeature();
+            var cancellation = new RequestCancellationFeature(token);
+
+            actor.Send(message.With(builder =>
+            {
+                builder.Set(awaiter);
+                builder.Set<IRequestAwaiterFeature>(awaiter);
+                builder.Set(cancellation);
+                builder.Set<IRequestCancellationFeature>(cancellation);
+            }));
+
+            await awaiter.Completion;
         }
 
         private class RefreshDecorator : IActorRef
