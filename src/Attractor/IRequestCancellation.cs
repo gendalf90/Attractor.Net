@@ -2,7 +2,7 @@ using System.Threading;
 
 namespace Attractor;
 
-public interface IRequestCancellationFeature
+public interface IRequestCancellation
 {
     CancellationToken Token { get; }
 }

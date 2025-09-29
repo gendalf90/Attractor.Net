@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 
 namespace Attractor.Implementation
 {
-    internal class CommandQueue : Dispatcher, ICommandQueueFeature
+    internal class CommandQueue : Dispatcher, ICommandQueue
     {
         private readonly ConcurrentQueue<ICommand> queue = new();
 

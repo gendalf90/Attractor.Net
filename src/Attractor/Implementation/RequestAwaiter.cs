@@ -2,7 +2,7 @@ using System.Threading.Tasks;
 
 namespace Attractor.Implementation;
 
-internal class RequestAwaiterFeature : TaskCompletionSource, IRequestAwaiterFeature
+internal class RequestAwaiter : TaskCompletionSource, IRequestAwaiter
 {
     public Task Completion => Task;
 }

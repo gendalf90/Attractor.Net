@@ -2,7 +2,7 @@ using System.Threading;
 
 namespace Attractor.Implementation;
 
-internal class RequestCancellationFeature(CancellationToken token) : IRequestCancellationFeature
+internal class RequestCancellation(CancellationToken token) : IRequestCancellation
 {
     public CancellationToken Token => token;
 }

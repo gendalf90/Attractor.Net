@@ -1,6 +1,6 @@
 namespace Attractor;
 
-public interface ICommandQueueFeature
+public interface ICommandQueue
 {
     void Schedule(ICommand command);
 }

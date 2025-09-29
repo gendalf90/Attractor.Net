@@ -1,51 +1,66 @@
 using System;
 using System.Threading.Tasks;
 
-namespace Attractor.Implementation
+namespace Attractor.Implementation;
+
+internal static class Disposable
 {
-    internal static class Disposable
+    public static IDisposable Empty { get; } = new StrategyInstance();
+
+    public static IAsyncDisposable EmptyAsync { get; } = new StrategyInstance();
+
+    public static IDisposable Create(Action strategy)
     {
-        public static IDisposable Empty { get; } = new EmptyInstance();
+        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
 
-        public static IAsyncDisposable EmptyAsync { get; } = new EmptyInstance();
-        
-        public static IDisposable Create(Action strategy)
+        return new StrategyInstance(sync: strategy);
+    }
+
+    public static IAsyncDisposable Create(Func<ValueTask> strategy)
+    {
+        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+        return new StrategyInstance(async: strategy);
+    }
+
+    public static IDisposable Combine(IDisposable first, IDisposable second)
+    {
+        ArgumentNullException.ThrowIfNull(first, nameof(first));
+        ArgumentNullException.ThrowIfNull(second, nameof(second));
+
+        return new StrategyInstance(sync: () =>
         {
-            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+            using (second)
+            {
+                first.Dispose();
+            }
+        });
+    }
 
-            return new StrategyInstance(strategy, null);
+    public static IAsyncDisposable Combine(IAsyncDisposable first, IAsyncDisposable second)
+    {
+        ArgumentNullException.ThrowIfNull(first, nameof(first));
+        ArgumentNullException.ThrowIfNull(second, nameof(second));
+
+        return new StrategyInstance(async: async () =>
+        {
+            await using (second)
+            {
+                await first.DisposeAsync();
+            }
+        });
+    }
+
+    private class StrategyInstance(Action sync = null, Func<ValueTask> async = null) : IDisposable, IAsyncDisposable
+    {
+        ValueTask IAsyncDisposable.DisposeAsync()
+        {
+            return async != null ? async() : ValueTask.CompletedTask;
         }
 
-        public static IAsyncDisposable CreateAsync(Func<ValueTask> strategy)
+        void IDisposable.Dispose()
         {
-            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
-
-            return new StrategyInstance(null, strategy);
-        }
-
-        private class EmptyInstance : IDisposable, IAsyncDisposable
-        {
-            void IDisposable.Dispose()
-            {
-            }
-
-            ValueTask IAsyncDisposable.DisposeAsync()
-            {
-                return ValueTask.CompletedTask;
-            }
-        }
-
-        private class StrategyInstance(Action Strategy, Func<ValueTask> AsyncStrategy) : IDisposable, IAsyncDisposable
-        {
-            ValueTask IAsyncDisposable.DisposeAsync()
-            {
-                return AsyncStrategy();
-            }
-
-            void IDisposable.Dispose()
-            {
-                Strategy();
-            }
+            sync?.Invoke();
         }
     }
 }

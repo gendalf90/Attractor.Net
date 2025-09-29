@@ -67,12 +67,12 @@ namespace Attractor.Implementation
 
             Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
             {
-                return Task.CompletedTask;
+                return token.IsCancellationRequested ? Task.FromCanceled(token) : Task.CompletedTask;
             }
 
             Task IActor.OnStartAsync(IContext context, CancellationToken token)
             {
-                return Task.CompletedTask;
+                return token.IsCancellationRequested ? Task.FromCanceled(token) : Task.CompletedTask;
             }
         }
 

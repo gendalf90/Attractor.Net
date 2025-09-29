@@ -12,12 +12,12 @@ public static class Command
         return new StrategyInstance(strategy);
     }
 
-    public static Task ScheduleAsync(this ICommandQueueFeature queue, ICommand command)
+    public static Task ScheduleAsync(this ICommandQueue queue, ICommand command)
     {
         return queue.ScheduleAsync(command.Execute);
     }
 
-    public static Task ScheduleAsync(this ICommandQueueFeature queue, Action action)
+    public static Task ScheduleAsync(this ICommandQueue queue, Action action)
     {
         var completion = new TaskCompletionSource();
 
@@ -41,7 +41,7 @@ public static class Command
         return completion.Task;
     }
 
-    public static Task<T> ScheduleAsync<T>(this ICommandQueueFeature queue, Func<T> func)
+    public static Task<T> ScheduleAsync<T>(this ICommandQueue queue, Func<T> func)
     {
         var completion = new TaskCompletionSource<T>();
 

@@ -2,7 +2,7 @@ using System.Threading.Tasks;
 
 namespace Attractor;
 
-public interface IRequestAwaiterFeature
+public interface IRequestAwaiter
 {
     Task Completion { get; }
 }

@@ -5,18 +5,19 @@ using System.Threading.Tasks;
 
 namespace Attractor.Implementation;
 
-internal class Process(IActor actor, CancellationToken token) : IAsyncDisposable
+internal class Process(IActor actor, CancellationToken token) : IDisposable
 {
     private readonly PID pid = PID.Generate();
     private readonly CommandQueue commands = new();
     private readonly Queue<ICommand> requests = new();
 
     private State state = State.Initial;
+    private IDisposable processCallback = Disposable.Empty;
     private CancellationTokenRegistration registration;
     private CancellationTokenSource cancellation;
     private Task processingTask;
-    private Task disposingTask;
     private IContext processContext;
+    private IDisposable completion;
 
     public void Start()
     {
@@ -28,13 +29,10 @@ internal class Process(IActor actor, CancellationToken token) : IAsyncDisposable
         if (state == State.Initial)
         {
             cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
-            registration = cancellation.Token.Register(() => commands.Schedule(DisposeCommand));
+            registration = cancellation.Token.Register(Dispose);
+            completion = Disposable.Create(CompleteDispose);
             state = State.Processing;
-            processContext = Context.From(builder =>
-            {
-                builder.Set(pid);
-                builder.Set<ICommandQueueFeature>(commands);
-            });
+            processContext = Context.Value(pid);
             processingTask = Task.Run(() => ProcessStartAsync(processContext));
         }
     });
@@ -54,70 +52,40 @@ internal class Process(IActor actor, CancellationToken token) : IAsyncDisposable
         }
         catch
         {
-            commands.Schedule(DisposeCommand);
+            commands.Schedule(RunDisposeCommand);
         }
     }
 
     private async Task ProcessRequestAsync(IContext context)
     {
-        var requestAwaiter = context.Get<RequestAwaiterFeature>();
+        var requestAwaiter = context.Get<RequestAwaiter>();
 
         try
         {
-            using (UseRequestToken(context, out var token))
-            {
-                await actor.OnReceiveAsync(context.With(processContext), token);
+            await actor.OnReceiveAsync(context.With(processContext), token);
 
-                requestAwaiter?.SetResult();
-                commands.Schedule(ProcessNextRequestCommand);
-            }
+            requestAwaiter?.SetResult();
+            commands.Schedule(ProcessNextRequestCommand);
         }
         catch (OperationCanceledException e)
         {
             requestAwaiter?.SetCanceled(e.CancellationToken);
-            commands.Schedule(ProcessNextRequestCommand);
+            commands.Schedule(RunDisposeCommand);
         }
         catch (Exception e)
         {
             requestAwaiter?.SetException(e);
-            commands.Schedule(DisposeCommand);
+            commands.Schedule(RunDisposeCommand);
         }
-    }
-
-    private IDisposable UseRequestToken(IContext context, out CancellationToken token)
-    {
-        token = cancellation.Token;
-
-        var requestCancellation = context.Get<RequestCancellationFeature>();
-
-        if (requestCancellation == null)
-        {
-            return Disposable.Empty;
-        }
-
-        var requestSource = CancellationTokenSource.CreateLinkedTokenSource(requestCancellation.Token, cancellation.Token);
-
-        token = requestSource.Token;
-
-        return requestSource;
     }
 
     private ICommand ProcessRequestCommand(IContext context) => Command.From(() =>
     {
-        var requestAwaiter = context.Get<RequestAwaiterFeature>();
-        var requestCancellation = context.Get<RequestCancellationFeature>();
+        var requestAwaiter = context.Get<RequestAwaiter>();
 
-        if (requestCancellation != null && requestCancellation.Token.IsCancellationRequested)
-        {
-            requestAwaiter?.SetCanceled(requestCancellation.Token);
-        }
-        else if (cancellation.IsCancellationRequested)
+        if (cancellation.IsCancellationRequested)
         {
             requestAwaiter?.SetCanceled(cancellation.Token);
-        }
-        else if (state == State.Initial)
-        {
-            requestAwaiter?.SetException(new InvalidOperationException());
         }
         else if (state == State.Processing)
         {
@@ -143,9 +111,9 @@ internal class Process(IActor actor, CancellationToken token) : IAsyncDisposable
         }
     });
 
-    private ICommand DisposeCommand => Command.From(() =>
+    private ICommand RunDisposeCommand => Command.From(() =>
     {
-        if (state != State.Disposing)
+        if (state < State.Disposing)
         {
             state = State.Disposing;
             cancellation?.Cancel();
@@ -155,12 +123,36 @@ internal class Process(IActor actor, CancellationToken token) : IAsyncDisposable
                 command.Execute();
             }
 
-            disposingTask = Task.Run(DisposeInternalAsync);
+            Task.Run(DisposeInternalAsync);
+        }
+    });
+
+    public void OnComplete(Action action)
+    {
+        commands.Schedule(Command.From(() =>
+        {
+            if (state == State.Disposed)
+            {
+                action();
+            }
+            else
+            {
+                processCallback = Disposable.Combine(processCallback, Disposable.Create(action));
+            }
+        }));
+    }
+
+    private ICommand CompleteDisposeCommand => Command.From(() =>
+    {
+        using (processCallback)
+        {
+            state = State.Disposed;
         }
     });
 
     private async Task DisposeInternalAsync()
     {
+        using (completion)
         using (cancellation)
         using (registration)
         await using (actor)
@@ -172,9 +164,13 @@ internal class Process(IActor actor, CancellationToken token) : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    private void CompleteDispose()
     {
-        await commands.ScheduleAsync(DisposeCommand);
-        await disposingTask;
+        commands.Schedule(CompleteDisposeCommand);
+    }
+
+    public void Dispose()
+    {
+        commands.ScheduleAsync(RunDisposeCommand);
     }
 }

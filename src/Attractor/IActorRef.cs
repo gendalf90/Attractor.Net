@@ -1,7 +1,12 @@
-﻿namespace Attractor
+﻿using System;
+using System.Threading.Tasks;
+
+namespace Attractor
 {
-    public interface IActorRef
+    public interface IActorRef : IDisposable
     {
-        void Send(IMessage message);
+        Task Send(IMessage message);
+
+        void OnComplete(Action action);
     }
 }

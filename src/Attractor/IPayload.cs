@@ -4,5 +4,5 @@ namespace Attractor;
 
 public interface IPayload
 {
-    ReadOnlySpan<byte> AsSpan();
+    ReadOnlySpan<byte> Bytes { get; }
 }

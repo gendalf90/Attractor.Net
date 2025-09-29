@@ -4,40 +4,40 @@ namespace Attractor.Implementation;
 
 public static class Message
 {
+    public static IMessage Empty { get; } = new EmptyInstance();
+    
+    public static IMessage Value<T>(T value) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(value, nameof(value));
+
+        return new ValueInstance<T>(value);
+    }
+
     public static IMessage From(Action<IContextBuilder> strategy)
     {
-        return new Instance(strategy);
+        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+        return new StrategyInstance(strategy);
     }
 
-    public static IMessage Merge(IMessage first, IMessage second)
+    private class EmptyInstance : IMessage
     {
-        return new MergedMessageDecorator(first, second);
+        void IMessage.Configure(IContextBuilder builder) { }
     }
 
-    public static IMessage With(this IMessage context, IMessage other)
+    private class ValueInstance<T>(T value) : IMessage where T : class
     {
-        return Merge(context, other);
+        void IMessage.Configure(IContextBuilder builder)
+        {
+            builder.Set(value);
+        }
     }
 
-    public static IMessage With(this IMessage context, Action<IContextBuilder> configuration)
-    {
-        return Merge(context, From(configuration));
-    }
-
-    private class Instance(Action<IContextBuilder> strategy) : IMessage
+    private class StrategyInstance(Action<IContextBuilder> strategy) : IMessage
     {
         void IMessage.Configure(IContextBuilder builder)
         {
             strategy(builder);
-        }
-    }
-
-    private class MergedMessageDecorator(IMessage first, IMessage second) : IMessage
-    {
-        void IMessage.Configure(IContextBuilder builder)
-        {
-            first.Configure(builder);
-            second.Configure(builder);
         }
     }
 }

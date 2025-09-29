@@ -1,4 +1,8 @@
 using System;
+using System.Buffers.Text;
+using System.IO;
+using System.Runtime.InteropServices.Marshalling;
+using System.Text;
 using System.Threading;
 
 namespace Attractor.Implementation
@@ -141,19 +145,23 @@ namespace Attractor.Implementation
             {
                 this.value = value;
             }
-            
-            void IVisitable.Accept<T>(T visitor)
-            {
-                visitor.Visit(value);
-            }
+
+            public ReadOnlySpan<byte> Bytes => Encoding.UTF8.GetBytes
 
             public bool Equals(IAddress other)
             {
-                if (other == null)
+                if (ReferenceEquals(this, other))
                 {
-                    return false;
+                    return true;
                 }
+
+                if (other is StringAddress stringAddress)
+                {
+                    return value == stringAddress.value;
+                }
+
                 
+
                 using var visitor = visitorFactory.Value;
 
                 other.Accept(visitor);

@@ -12,37 +12,34 @@ public static class System
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
 
-        builder.Decorate(() => new InstanceDecorator());
+        builder.Decorate(() => new SystemDecorator());
     }
 
-    public static void AddRegistration(this IContextBuilder builder, IAddressPolicy policy, IProps properties)
+    public static void Register(this IActorRef systemRef, IAddressPolicy policy, IProps properties)
     {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+        ArgumentNullException.ThrowIfNull(systemRef, nameof(systemRef));
         ArgumentNullException.ThrowIfNull(policy, nameof(policy));
         ArgumentNullException.ThrowIfNull(properties, nameof(properties));
 
-        builder.Set(new Registration(policy, properties));
+        systemRef.Send(Message.Value(new Registration(policy, properties)));
     }
 
-    private class Registration(IAddressPolicy policy, IProps properties)
+    public static IActorRef GetOrRun(this IActorRef systemRef, IAddress address)
     {
-        public bool IsMatch(IAddress address)
-        {
-            return policy.IsMatch(address);
-        }
+        ArgumentNullException.ThrowIfNull(systemRef, nameof(systemRef));
+        ArgumentNullException.ThrowIfNull(address, nameof(address));
 
-        public Process Build(IAddress address, IAsyncDisposable disposing, CancellationToken token)
-        {
-            var actor = actorBuilder.Build();
-
-            return new Process(address, actor, disposing, token);
-        }
+        systemRef.Send(Message.Value(new Runner(address)));
     }
 
-    private class InstanceDecorator : IActor, IDecorator<IActor>
+    private record Registration(IAddressPolicy Policy, IProps Properties);
+
+    private record Runner(IAddress Address);
+
+    private class SystemDecorator : IActor, IDecorator<IActor>
     {
-        private readonly LinkedList<RegisterMessage> registrations = new();
-        private readonly Dictionary<IAddress, Process> children = new();
+        private readonly LinkedList<Registration> registrations = new();
+        private readonly Dictionary<IAddress, IActorRef> children = new();
 
         private IActor decoratee;
 
@@ -51,23 +48,119 @@ public static class System
             decoratee = value;
         }
 
-        ValueTask IAsyncDisposable.DisposeAsync()
+        async ValueTask IAsyncDisposable.DisposeAsync()
         {
-            throw new NotImplementedException();
+            await decoratee.DisposeAsync();
         }
 
-        Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
+        async Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
         {
-            throw new NotImplementedException();
+            var registration = context.Get<Registration>();
+            var runner = context.Get<Runner>();
+
+            if (registration != null)
+            {
+                commandQueue.Schedule(CreateRegistrationCommand(registration));
+            }
+
+            await decoratee.OnReceiveAsync(context, token);
         }
 
-        Task IActor.OnStartAsync(IContext context, CancellationToken token)
+        async Task IActor.OnStartAsync(IContext context, CancellationToken token)
         {
-            throw new NotImplementedException();
+            await decoratee.OnStartAsync(context, token);
+        }
+
+        private ICommand CreateRegistrationCommand(Registration registration) => Command.From(() =>
+        {
+            registrations.AddFirst(registration);
+        });
+
+        private ICommand StartProcessCommand(AwaiterFeature awaiter, IAddress address, StartMessage message) => Command.From(() =>
+        {
+            if (cancellation.IsCancellationRequested)
+            {
+                awaiter?.SetCanceled(cancellation.Token);
+            }
+            else if (children.TryGetValue(address, out var result))
+            {
+                message.Complete(result);
+                awaiter?.SetResult();
+            }
+            else
+            {
+                commands.Schedule(BuildProcessCommand(awaiter, address, message, registrations.First));
+            }
+        });
+
+        private ICommand BuildProcessCommand(AwaiterFeature awaiter, IAddress address, StartMessage message, LinkedListNode<RegisterMessage> node)
+        {
+            return Command.From(() =>
+            {
+                try
+                {
+                    if (cancellation.IsCancellationRequested)
+                    {
+                        awaiter?.SetCanceled(cancellation.Token);
+                    }
+                    else if (children.TryGetValue(address, out var result))
+                    {
+                        message.Complete(result);
+                        awaiter?.SetResult();
+                    }
+                    else if (node == null)
+                    {
+                        awaiter?.SetException(new NullReferenceException());
+                    }
+                    else if (node.Value.IsMatch(address))
+                    {
+                        var disposing = Disposable.CreateAsync(async () =>
+                        {
+                            await commands.ScheduleAsync(() =>
+                            {
+                                children.Remove(address);
+                            });
+                        });
+
+                        var process = node.Value.Build(address, disposing, cancellation.Token);
+
+                        children.Add(address, process);
+                        process.Start();
+                        message.Complete(process);
+                        awaiter?.SetResult();
+                    }
+                    else
+                    {
+                        commands.Schedule(BuildProcessCommand(awaiter, address, message, node.Next));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    awaiter?.SetException(ex);
+                }
+            });
         }
     }
 
+    private class SystemActorRef : IActorRef
+    {
+        private volatile IActorRef actorRef;
 
+        public SystemActorRef(IActorRef actorRef)
+        {
+            this.actorRef = actorRef;
+        }
+
+        public void Send(IMessage message)
+        {
+            actorRef.Send(message);
+        }
+
+        public void Set(IActorRef actorRef)
+        {
+            this.actorRef = actorRef;
+        }
+    }
 
 
 
