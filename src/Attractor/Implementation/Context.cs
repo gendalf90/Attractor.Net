@@ -57,7 +57,7 @@ namespace Attractor.Implementation
             T IContext.Get<T>() => null;
         }
 
-        private class ValueInstance<TValue>(TValue value) : IContext where TValue : class
+        private class ValueInstance<TValue>(object value) : IContext where TValue : class
         {
             T IContext.Get<T>() => typeof(T) == typeof(TValue) ? value as T : null;
         }
@@ -76,7 +76,7 @@ namespace Attractor.Implementation
                 }
             }
 
-            T IContext.Get<T>() => TryGetValue(typeof(T), out var value) ? (T)value : null;
+            T IContext.Get<T>() => TryGetValue(typeof(T), out var value) ? value as T : null;
         }
 
         private class MergedContextDecorator(IContext first, IContext second) : IContext

@@ -1,15 +1,10 @@
-﻿namespace Attractor
+using System;
+
+namespace Attractor;
+
+public interface IActorProcess : IActorRef, IDisposable
 {
-    public interface IActorProcess : IActorRef
-    {
-        bool IsStarting();
+    void OnComplete(Action action);
 
-        bool IsActive();
-
-        bool IsStopping();
-
-        bool IsCollecting();
-        
-        void Stop();
-    }
+    void OnCancel(Action action);
 }

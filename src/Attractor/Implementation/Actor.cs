@@ -6,7 +6,7 @@ namespace Attractor.Implementation
 {
     public static class Actor
     {
-        public static IActorRef Run(IProps properties, CancellationToken token = default)
+        public static IActorProcess Run(IProps properties, CancellationToken token = default)
         {
             ArgumentNullException.ThrowIfNull(properties, nameof(properties));
 
@@ -19,10 +19,28 @@ namespace Attractor.Implementation
 
             process.Start();
 
-            return new ActorRef(process);
+            return process;
         }
 
-        public static void OnReceive(this IActorBuilder builder, DecorateReceive strategy)
+        public static void Use<T>(this IActorBuilder builder, T value) where T : class
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(value, nameof(value));
+
+            Task Strategy(ReceiveAsync next, IContext context, CancellationToken token) => next(context.With(value), token);
+
+            builder.Decorate(() => new DecoratorInstance(onStart: Strategy, onReceive: Strategy));
+        }
+
+        public static void OnStart(this IActorBuilder builder, DecorateReceiveAsync strategy)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.Decorate(() => new DecoratorInstance(onStart: strategy));
+        }
+
+        public static void OnReceive(this IActorBuilder builder, DecorateReceiveAsync strategy)
         {
             ArgumentNullException.ThrowIfNull(builder, nameof(builder));
             ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
@@ -30,7 +48,7 @@ namespace Attractor.Implementation
             builder.Decorate(() => new DecoratorInstance(onReceive: strategy));
         }
 
-        public static void OnReceive(this IActorBuilder builder, Receive strategy)
+        public static void OnReceive(this IActorBuilder builder, ReceiveAsync strategy)
         {
             ArgumentNullException.ThrowIfNull(builder, nameof(builder));
             ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
@@ -42,7 +60,20 @@ namespace Attractor.Implementation
             });
         }
 
-        public static void OnReceive<T>(this IActorBuilder builder, Receive<T> strategy) where T : class
+        public static void OnReceive(this IActorBuilder builder, Receive strategy)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.OnReceive((context, _) =>
+            {
+                strategy(context);
+
+                return Task.CompletedTask;
+            });
+        }
+
+        public static void OnReceive<T>(this IActorBuilder builder, ReceiveAsync<T> strategy) where T : class
         {
             ArgumentNullException.ThrowIfNull(builder, nameof(builder));
             ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
@@ -53,7 +84,56 @@ namespace Attractor.Implementation
 
                 if (value != null)
                 {
-                    await strategy(value, token);
+                    await strategy(value, context, token);
+                }
+            });
+        }
+
+        public static void OnReceive<T>(this IActorBuilder builder, Receive<T> strategy) where T : class
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.OnReceive<T>((value, context, _) =>
+            {
+                strategy(value, context);
+
+                return Task.CompletedTask;
+            });
+        }
+
+        public static void OnDispose(this IActorBuilder builder, DecorateDisposeAsync strategy)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.Decorate(() => new DecoratorInstance(onDispose: strategy));
+        }
+
+        public static void OnDispose(this IActorBuilder builder, Func<ValueTask> strategy)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.OnDispose(async next =>
+            {
+                await using (Disposable.Create(strategy))
+                {
+                    await next();
+                }
+            });
+        }
+
+        public static void OnDispose(this IActorBuilder builder, Action strategy)
+        {
+            ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+            ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+            builder.OnDispose(async next =>
+            {
+                using (Disposable.Create(strategy))
+                {
+                    await next();
                 }
             });
         }
@@ -77,9 +157,9 @@ namespace Attractor.Implementation
         }
 
         private class DecoratorInstance(
-            DecorateReceive onReceive = null,
-            DecorateReceive onStart = null,
-            DecorateDispose onDispose = null) : IActor, IDecorator<IActor>
+            DecorateReceiveAsync onReceive = null,
+            DecorateReceiveAsync onStart = null,
+            DecorateDisposeAsync onDispose = null) : IActor, IDecorator<IActor>
         {
             private IActor decoratee;
 

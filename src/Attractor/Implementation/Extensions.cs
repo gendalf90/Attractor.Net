@@ -13,6 +13,24 @@ namespace Attractor.Implementation
             await actor.Send(message).WaitAsync(token);
         }
 
+        public static Task GetCompletion(this IActorProcess process)
+        {
+            var source = new TaskCompletionSource();
+
+            process.OnComplete(source.SetResult);
+
+            return source.Task;
+        }
+
+        public static CancellationToken GetCancellation(this IActorProcess process)
+        {
+            var source = new CancellationTokenSource();
+
+            process.OnCancel(source.Cancel);
+
+            return source.Token;
+        }
+
         private class RefreshDecorator : IActorRef
         {
             private State state;

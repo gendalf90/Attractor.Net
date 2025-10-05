@@ -26,6 +26,11 @@ internal class ActorRef(Process process) : ISelf
         process.OnComplete(action);
     }
 
+    public void OnCancel(Action action)
+    {
+        process.OnCancel(action);
+    }
+
     public void Dispose()
     {
         process.Dispose();
