@@ -1,63 +1,62 @@
 using System.Threading;
 
-namespace Attractor.Implementation
+namespace Attractor.Implementation;
+
+internal abstract class Dispatcher
 {
-    internal abstract class Dispatcher
+    private const long LockValue = 1;
+    private const long UnlockValue = 0;
+
+    private long counter = UnlockValue;
+
+    private void Execute(object state)
     {
-        private const long LockValue = 1;
-        private const long UnlockValue = 0;
+        ResetLock();
 
-        private long counter = UnlockValue;
-
-        private void Execute(object state)
+        try
         {
-            ResetLock();
-            
-            try
-            {
-                Process();
-            }
-            catch 
-            {
-                return;
-            }
-            finally
-            {
-                Unlock();
-            }
+            Process();
         }
-
-        private void Unlock()
+        catch
         {
-            if (!TryUnlock())
-            {
-                ThreadPool.QueueUserWorkItem(Execute);
-            }
+            return;
         }
-
-        public void Touch()
+        finally
         {
-            if (TryLock())
-            {
-                ThreadPool.QueueUserWorkItem(Execute);
-            }
+            Unlock();
         }
+    }
 
-        protected abstract void Process();
-
-        private bool TryLock()
+    private void Unlock()
+    {
+        if (!TryUnlock())
         {
-            return Interlocked.Increment(ref counter) == LockValue;
+            ThreadPool.QueueUserWorkItem(Execute);
         }
+    }
 
-        private bool TryUnlock()
+    public void Touch()
+    {
+        if (TryLock())
         {
-            return Interlocked.Decrement(ref counter) == UnlockValue;
+            ThreadPool.QueueUserWorkItem(Execute);
         }
+    }
 
-        private void ResetLock()
-        {
-            Interlocked.Exchange(ref counter, LockValue);
-        }
+    protected abstract void Process();
+
+    private bool TryLock()
+    {
+        return Interlocked.Increment(ref counter) == LockValue;
+    }
+
+    private bool TryUnlock()
+    {
+        return Interlocked.Decrement(ref counter) == UnlockValue;
+    }
+
+    private void ResetLock()
+    {
+        Interlocked.Exchange(ref counter, LockValue);
     }
 }

@@ -1,30 +1,29 @@
 using System.Collections.Concurrent;
 
-namespace Attractor.Implementation
+namespace Attractor.Implementation;
+
+internal class CommandQueue : Dispatcher, ICommandQueue
 {
-    internal class CommandQueue : Dispatcher, ICommandQueue
+    private readonly ConcurrentQueue<ICommand> queue = new();
+
+    public void Schedule(ICommand command)
     {
-        private readonly ConcurrentQueue<ICommand> queue = new();
+        queue.Enqueue(command);
 
-        public void Schedule(ICommand command)
-        {
-            queue.Enqueue(command);
+        Touch();
+    }
 
-            Touch();
-        }
-        
-        protected override void Process()
+    protected override void Process()
+    {
+        while (queue.TryDequeue(out var command))
         {
-            while (queue.TryDequeue(out var command))
+            try
             {
-                try
-                {
-                    command.Execute();
-                }
-                catch
-                {
-                    continue;
-                }
+                command.Execute();
+            }
+            catch
+            {
+                continue;
             }
         }
     }

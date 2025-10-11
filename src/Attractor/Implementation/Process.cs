@@ -7,7 +7,7 @@ namespace Attractor.Implementation;
 
 internal class Process(IActor actor, CancellationToken token) : IActorProcess
 {
-    private readonly PID pid = PID.Generate();
+    private readonly Guid pid = Guid.NewGuid();
     private readonly CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
     private readonly CommandQueue commands = new();
     private readonly Queue<ICommand> requests = new();
@@ -24,6 +24,8 @@ internal class Process(IActor actor, CancellationToken token) : IActorProcess
     {
         commands.Schedule(ProcessStartCommand);
     }
+
+    public Guid PID => pid;
 
     private ICommand ProcessStartCommand => Command.From(() =>
     {

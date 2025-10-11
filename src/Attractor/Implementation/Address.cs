@@ -1,227 +1,249 @@
 using System;
 using System.Buffers.Text;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices.Marshalling;
 using System.Text;
 using System.Threading;
 
-namespace Attractor.Implementation
+namespace Attractor.Implementation;
+
+public static class Address
 {
-    public static class Address
+    public static IEqualityComparer<IAddress> EqualityComparer { get; } = new AddressEqualityComparer();
+
+    private class AddressEqualityComparer : IEqualityComparer<IAddress>
     {
-        private static readonly ThreadLocal<ValueVisitor> visitorFactory = new(() => new ValueVisitor());
+        public static AddressEqualityComparer Default { get; } = new AddressEqualityComparer();
 
-        public static IAddressPolicy FromStrategy(Predicate<IAddress> predicate)
+        public bool Equals(IAddress first, IAddress second)
         {
-            ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
-            
-            return new StrategyAddressPolicy(predicate);
+            ArgumentNullException.ThrowIfNull(first, nameof(first));
+            ArgumentNullException.ThrowIfNull(second, nameof(second));
+
+            return first.Equals(second);
         }
-        
-        public static IAddressPolicy FromString(Predicate<string> predicate)
+
+        public int GetHashCode(IAddress obj)
         {
-            ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
-            
-            return FromStrategy(address =>
+            ArgumentNullException.ThrowIfNull(obj, nameof(obj));
+
+            return obj.GetHashCode();
+        }
+    }
+
+    private static readonly ThreadLocal<ValueVisitor> visitorFactory = new(() => new ValueVisitor());
+
+    public static IAddressPolicy FromStrategy(Predicate<IAddress> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
+
+        return new StrategyAddressPolicy(predicate);
+    }
+
+    public static IAddressPolicy FromString(Predicate<string> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
+
+        return FromStrategy(address =>
+        {
+            using var visitor = visitorFactory.Value;
+
+            address.Accept(visitor);
+
+            if (!visitor.IsString)
             {
-                using var visitor = visitorFactory.Value;
-                
-                address.Accept(visitor);
-
-                if (!visitor.IsString)
-                {
-                    return false;
-                }
-
-                return predicate(visitor.String);
-            });
-        }
-
-        public static IAddressPolicy FromExact(IAddress address)
-        {
-            ArgumentNullException.ThrowIfNull(address, nameof(address));
-            
-            return FromStrategy(toCompare =>
-            {
-                return AddressEqualityComparer.Default.Equals(toCompare, address);
-            });
-        }
-        
-        public static IAddress FromString(string value)
-        {
-            return new StringAddress(value);
-        }
-
-        public static IAddressPolicy FromBytes(Predicate<byte[]> predicate)
-        {
-            ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
-            
-            return FromStrategy(address =>
-            {
-                using var visitor = visitorFactory.Value;
-                
-                address.Accept(visitor);
-
-                if (!visitor.IsBytes)
-                {
-                    return false;
-                }
-
-                return predicate(visitor.Bytes);
-            });
-        }
-
-        public static IAddress FromBytes(params byte[] value)
-        {
-            return new BytesAddress(value);
-        }
-
-        private class BytesAddress : IAddress
-        {
-            private readonly byte[] value;
-
-            public BytesAddress(byte[] value)
-            {
-                this.value = value;
+                return false;
             }
-            
-            void IVisitable.Accept<T>(T visitor)
+
+            return predicate(visitor.String);
+        });
+    }
+
+    public static IAddressPolicy FromExact(IAddress address)
+    {
+        ArgumentNullException.ThrowIfNull(address, nameof(address));
+
+        return FromStrategy(toCompare =>
+        {
+            return AddressEqualityComparer.Default.Equals(toCompare, address);
+        });
+    }
+
+    public static IAddress FromString(string value)
+    {
+        return new StringAddress(value);
+    }
+
+    public static IAddressPolicy FromBytes(Predicate<byte[]> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
+
+        return FromStrategy(address =>
+        {
+            using var visitor = visitorFactory.Value;
+
+            address.Accept(visitor);
+
+            if (!visitor.IsBytes)
             {
-                visitor.Visit(value);
+                return false;
             }
+
+            return predicate(visitor.Bytes);
+        });
+    }
+
+    public static IAddress FromBytes(params byte[] value)
+    {
+        return new BytesAddress(value);
+    }
+
+    private class BytesAddress : IAddress
+    {
+        private readonly byte[] value;
+
+        public BytesAddress(byte[] value)
+        {
+            this.value = value;
+        }
+
+        void IVisitable.Accept<T>(T visitor)
+        {
+            visitor.Visit(value);
+        }
+
+        public bool Equals(IAddress other)
+        {
+            if (other == null)
+            {
+                return false;
+            }
+
+            using var visitor = visitorFactory.Value;
+
+            other.Accept(visitor);
+
+            if (!visitor.IsBytes)
+            {
+                return false;
+            }
+
+            return value.AsSpan().SequenceEqual(visitor.Bytes);
+        }
+
+        public override bool Equals(object obj)
+        {
+            return Equals(obj as IAddress);
+        }
+
+        public override int GetHashCode()
+        {
+            var result = new HashCode();
+
+            result.AddBytes(value);
+
+            return result.ToHashCode();
+        }
+
+        public override string ToString()
+        {
+            return BitConverter.ToString(value);
+        }
+    }
+
+    private record StrategyAddressPolicy(Predicate<IAddress> Strategy) : IAddressPolicy
+    {
+        bool IAddressPolicy.IsMatch(IAddress address)
+        {
+            return Strategy(address);
+        }
+    }
+
+    private class StringAddress : IAddress
+    {
+        private readonly string value;
+
+        public StringAddress(string value)
+        {
+            this.value = value;
+        }
+
+        public ReadOnlySpan<byte> Bytes => Encoding.UTF8.GetBytes
 
             public bool Equals(IAddress other)
-            {
-                if (other == null)
-                {
-                    return false;
-                }
-                
-                using var visitor = visitorFactory.Value;
-
-                other.Accept(visitor);
-
-                if (!visitor.IsBytes)
-                {
-                    return false;
-                }
-
-                return value.AsSpan().SequenceEqual(visitor.Bytes);
-            }
-
-            public override bool Equals(object obj)
-            {
-                return Equals(obj as IAddress);
-            }
-
-            public override int GetHashCode()
-            {
-                var result = new HashCode();
-                
-                result.AddBytes(value);
-
-                return result.ToHashCode();
-            }
-
-            public override string ToString()
-            {
-                return BitConverter.ToString(value);
-            }
-        }
-
-        private record StrategyAddressPolicy(Predicate<IAddress> Strategy) : IAddressPolicy
         {
-            bool IAddressPolicy.IsMatch(IAddress address)
+            if (ReferenceEquals(this, other))
             {
-                return Strategy(address);
+                return true;
             }
+
+            if (other is StringAddress stringAddress)
+            {
+                return value == stringAddress.value;
+            }
+
+
+
+            using var visitor = visitorFactory.Value;
+
+            other.Accept(visitor);
+
+            if (!visitor.IsString)
+            {
+                return false;
+            }
+
+            return visitor.String == value;
         }
 
-        private class StringAddress : IAddress
+        public override bool Equals(object obj)
         {
-            private readonly string value;
-
-            public StringAddress(string value)
-            {
-                this.value = value;
-            }
-
-            public ReadOnlySpan<byte> Bytes => Encoding.UTF8.GetBytes
-
-            public bool Equals(IAddress other)
-            {
-                if (ReferenceEquals(this, other))
-                {
-                    return true;
-                }
-
-                if (other is StringAddress stringAddress)
-                {
-                    return value == stringAddress.value;
-                }
-
-                
-
-                using var visitor = visitorFactory.Value;
-
-                other.Accept(visitor);
-
-                if (!visitor.IsString)
-                {
-                    return false;
-                }
-
-                return visitor.String == value;
-            }
-
-            public override bool Equals(object obj)
-            {
-                return Equals(obj as IAddress);
-            }
-
-            public override int GetHashCode()
-            {
-                return value.GetHashCode();
-            }
-
-            public override string ToString()
-            {
-                return value;
-            }
+            return Equals(obj as IAddress);
         }
 
-        private class ValueVisitor : IVisitor, IDisposable
+        public override int GetHashCode()
         {
-            void IVisitor.Visit<T>(T value)
-            {
-                switch (value)
-                {
-                    case byte[] arr:
-                        IsBytes = true;
-                        Bytes = arr;
-                        break;
-                    case string str:
-                        IsString = true;
-                        String = str;
-                        break;
-                }
-            }
-
-            void IDisposable.Dispose()
-            {
-                IsBytes = false;
-                IsString = false;
-                Bytes = null;
-                String = null;
-            }
-
-            public bool IsBytes { get; private set; }
-
-            public byte[] Bytes { get; private set; }
-
-            public bool IsString { get; private set; }
-
-            public string String { get; private set; }
+            return value.GetHashCode();
         }
+
+        public override string ToString()
+        {
+            return value;
+        }
+    }
+
+    private class ValueVisitor : IVisitor, IDisposable
+    {
+        void IVisitor.Visit<T>(T value)
+        {
+            switch (value)
+            {
+                case byte[] arr:
+                    IsBytes = true;
+                    Bytes = arr;
+                    break;
+                case string str:
+                    IsString = true;
+                    String = str;
+                    break;
+            }
+        }
+
+        void IDisposable.Dispose()
+        {
+            IsBytes = false;
+            IsString = false;
+            Bytes = null;
+            String = null;
+        }
+
+        public bool IsBytes { get; private set; }
+
+        public byte[] Bytes { get; private set; }
+
+        public bool IsString { get; private set; }
+
+        public string String { get; private set; }
     }
 }

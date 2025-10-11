@@ -1,7 +1,6 @@
-﻿namespace Attractor
+﻿namespace Attractor;
+
+public interface IAddressPolicy
 {
-    public interface IAddressPolicy
-    {
-        bool IsMatch(IAddress address);
-    }
+    bool IsMatch(IAddress address);
 }

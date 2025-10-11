@@ -1,7 +1,6 @@
-namespace Attractor
+namespace Attractor;
+
+public interface IDecorator<T>
 {
-    public interface IDecorator<T>
-    {
-        void Decorate(T value);
-    }
+    void Decorate(T value);
 }

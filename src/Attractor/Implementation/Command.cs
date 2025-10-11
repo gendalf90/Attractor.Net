@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace Attractor.Implementation;
 
-public static class Command
+internal static class Command
 {
     public static ICommand From(Action strategy)
     {
