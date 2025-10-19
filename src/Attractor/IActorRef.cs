@@ -1,8 +1,8 @@
-﻿using System.Threading.Tasks;
+﻿using System.Threading;
 
 namespace Attractor;
 
 public interface IActorRef
 {
-    Task Send(IMessage message);
+    IRequest Send(IMessage message, CancellationToken token = default);
 }

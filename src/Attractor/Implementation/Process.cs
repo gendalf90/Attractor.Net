@@ -5,53 +5,52 @@ using System.Threading.Tasks;
 
 namespace Attractor.Implementation;
 
-internal class Process(IActor actor, CancellationToken token) : IActorProcess
+internal class Process(IActor actor, CancellationToken cancellation) : IActorProcess
 {
-    private readonly Guid pid = Guid.NewGuid();
-    private readonly CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
     private readonly CommandQueue commands = new();
     private readonly Queue<ICommand> requests = new();
+    private readonly TaskCompletionSource completion = new();
 
     private State state = State.Initial;
-    private IDisposable processCompletion = Disposable.Empty;
-    private IDisposable processCancellation = Disposable.Empty;
     private CancellationTokenRegistration registration;
     private Task processingTask;
     private IContext processContext;
-    private IDisposable completion;
+    private bool isCancelled;
+    private Exception error;
 
     public void Start()
     {
         commands.Schedule(ProcessStartCommand);
     }
 
-    public Guid PID => pid;
+    Task ICompletion.Completion => completion.Task;
+
+    CancellationToken ICancellation.Cancellation => cancellation;
 
     private ICommand ProcessStartCommand => Command.From(() =>
     {
         if (state == State.Initial)
         {
-            registration = cancellation.Token.Register(Dispose);
-            completion = Disposable.Create(CompleteDispose);
+            registration = cancellation.Register(() => commands.Schedule(RunDisposeCommand(isCancelled: true)));
             state = State.Processing;
             processContext = Context.Value<IActorProcess>(this);
             processingTask = Task.Run(() => ProcessStartAsync(processContext));
         }
     });
 
-    public Task Send(IMessage message)
+    IRequest IActorRef.Send(IMessage message, CancellationToken token)
     {
-        var awaiter = new RequestAwaiter();
+        var request = new Request(token, cancellation);
 
         Send(Context.From(builder =>
         {
             message.Configure(builder);
-            builder.Set(awaiter);
-            builder.Set<IRequestAwaiter>(awaiter);
+            builder.Set(request);
+            builder.Set<IRequest>(request);
             builder.Set(message);
         }));
 
-        return awaiter.Completion;
+        return request;
     }
 
     private void Send(IContext context)
@@ -63,46 +62,51 @@ internal class Process(IActor actor, CancellationToken token) : IActorProcess
     {
         try
         {
-            await actor.OnStartAsync(context, cancellation.Token);
+            await actor.StartAsync(context, cancellation);
 
             commands.Schedule(ProcessNextRequestCommand);
         }
-        catch
+        catch (Exception ex)
         {
-            commands.Schedule(RunDisposeCommand);
+            commands.Schedule(RunDisposeCommand(error: ex));
         }
     }
 
     private async Task ProcessRequestAsync(IContext context)
     {
-        var requestAwaiter = context.Get<RequestAwaiter>();
+        var request = context.Get<Request>();
 
         try
         {
-            await actor.OnReceiveAsync(context.With(processContext), cancellation.Token);
+            await actor.ReceiveAsync(context.With(processContext), request.Cancellation);
 
-            requestAwaiter?.SetResult();
-            commands.Schedule(ProcessNextRequestCommand);
+            request.Complete();
         }
-        catch (OperationCanceledException e)
+        catch (OperationCanceledException)
         {
-            requestAwaiter?.SetCanceled(e.CancellationToken);
-            commands.Schedule(RunDisposeCommand);
+            request.Cancel();
         }
         catch (Exception e)
         {
-            requestAwaiter?.SetException(e);
-            commands.Schedule(RunDisposeCommand);
+            request.Fault(e);
+        }
+        finally
+        {
+            commands.Schedule(ProcessNextRequestCommand);
         }
     }
 
     private ICommand ProcessRequestCommand(IContext context) => Command.From(() =>
     {
-        var requestAwaiter = context.Get<RequestAwaiter>();
+        var request = context.Get<Request>();
 
-        if (cancellation.IsCancellationRequested)
+        if (state == State.Disposing)
         {
-            requestAwaiter?.SetCanceled(cancellation.Token);
+            request.Cancel();
+        }
+        else if (state == State.Disposed)
+        {
+            request.Fault(new ObjectDisposedException(nameof(IActorProcess)));
         }
         else if (state == State.Processing)
         {
@@ -122,76 +126,58 @@ internal class Process(IActor actor, CancellationToken token) : IActorProcess
             state = State.Started;
         }
 
+        if (state >= State.Disposing)
+        {
+            return;
+        }
+
         if (requests.TryDequeue(out var command))
         {
             command.Execute();
         }
     });
 
-    private ICommand RunDisposeCommand => Command.From(() =>
+    private ICommand RunCompleteCommand => Command.From(() =>
+    {
+        state = State.Disposed;
+
+        if (isCancelled)
+        {
+            completion.SetCanceled(cancellation);
+        }
+        else if (error != null)
+        {
+            completion.SetException(error);
+        }
+        else
+        {
+            completion.SetResult();
+        }
+    });
+
+    private ICommand RunDisposeCommand(bool isCancelled = false, Exception error = null) => Command.From(() =>
     {
         if (state >= State.Disposing)
         {
             return;
         }
 
-        using (processCancellation)
+        state = State.Disposing;
+
+        this.isCancelled = isCancelled;
+        this.error = error;
+
+        while (requests.TryDequeue(out var command))
         {
-            state = State.Disposing;
-
-            cancellation.Cancel();
-
-            while (requests.TryDequeue(out var command))
-            {
-                command.Execute();
-            }
-
-            Task.Run(DisposeInternalAsync);
+            command.Execute();
         }
-    });
 
-    public void OnComplete(Action action)
-    {
-        commands.Schedule(Command.From(() =>
-        {
-            if (state == State.Disposed)
-            {
-                action();
-            }
-            else
-            {
-                processCompletion = Disposable.Combine(processCompletion, Disposable.Create(action));
-            }
-        }));
-    }
-
-    public void OnCancel(Action action)
-    {
-        commands.Schedule(Command.From(() =>
-        {
-            if (state >= State.Disposing)
-            {
-                action();
-            }
-            else
-            {
-                processCancellation = Disposable.Combine(processCancellation, Disposable.Create(action));
-            }
-        }));
-    }
-
-    private ICommand CompleteDisposeCommand => Command.From(() =>
-    {
-        using (processCompletion)
-        {
-            state = State.Disposed;
-        }
+        Task.Run(DisposeInternalAsync);
     });
 
     private async Task DisposeInternalAsync()
     {
-        using (completion)
-        using (cancellation)
+        using (Disposable.Create(Complete))
         using (registration)
         await using (actor)
         {
@@ -202,13 +188,13 @@ internal class Process(IActor actor, CancellationToken token) : IActorProcess
         }
     }
 
-    private void CompleteDispose()
+    private void Complete()
     {
-        commands.Schedule(CompleteDisposeCommand);
+        commands.ScheduleAsync(RunCompleteCommand);
     }
 
     public void Dispose()
     {
-        commands.ScheduleAsync(RunDisposeCommand);
+        commands.ScheduleAsync(RunDisposeCommand());
     }
 }

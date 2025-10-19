@@ -1,48 +1,28 @@
-namespace Attractor.Implementation
+using System;
+
+namespace Attractor.Implementation;
+
+public static class Payload
 {
-    public static class Payload
+    public static IPayload Empty { get; } = new BytesPayload([]);
+
+    public static IPayload FromBytes(params byte[] value)
     {
-        private static readonly EmptyPayload empty = new();
+        ArgumentNullException.ThrowIfNull(value, nameof(value));
 
-        public static IPayload From<T>(T value)
+        return new BytesPayload(value);
+    }
+
+    private class BytesPayload(byte[] value) : IPayload
+    {
+        public ReadOnlySpan<byte> GetBytes()
         {
-            return new TypedPayload<T>(value);
+            return value;
         }
 
-        public static IPayload Combine(params IPayload[] payloads)
+        public override string ToString()
         {
-            return new CombinedPayload(payloads);
-        }
-
-        public static IPayload Empty()
-        {
-            return empty;
-        }
-
-        private record EmptyPayload : IPayload
-        {
-            void IVisitable.Accept<T>(T visitor)
-            {
-            }
-        }
-
-        private record TypedPayload<TPayload>(TPayload Value) : IPayload
-        {
-            void IVisitable.Accept<TVisitor>(TVisitor visitor)
-            {
-                visitor.Visit(Value);
-            }
-        }
-
-        private record CombinedPayload(IPayload[] Payloads) : IPayload
-        {
-            void IVisitable.Accept<TVisitor>(TVisitor visitor)
-            {
-                foreach (var payload in Payloads)
-                {
-                    payload.Accept(visitor);
-                }
-            }
+            return BitConverter.ToString(value);
         }
     }
 }

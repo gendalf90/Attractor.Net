@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Attractor.Implementation;
@@ -56,7 +57,7 @@ public static class System
                 builder.OnDispose(() => systemProcess.Send(Message.Value(new DisposeMessage(message.Address))));
             });
 
-            actorProcess = Actor.Run(actorProperties, systemProcess.GetCancellation());
+            actorProcess = Actor.Run(actorProperties, systemProcess.Cancellation);
 
             children.Add(message.Address, actorProcess);
 
@@ -70,7 +71,12 @@ public static class System
 
         builder.OnDispose(async () =>
         {
-            await Task.WhenAll(children.Values.Select(actor => actor.GetCompletion()));
+            foreach (var child in children.Values)
+            {
+                child.Dispose();
+            }
+            
+            await Task.WhenAll(children.Values.Select(actor => actor.Completion));
         });
     }
 
@@ -83,16 +89,16 @@ public static class System
         systemRef.Send(Message.Value(new RegisterMessage(policy, properties)));
     }
 
-    public static IActorRef GetOrRun(this IActorRef systemRef, IAddress address)
+    public static IActorRef Run(this IActorRef systemRef, IAddress address)
     {
         ArgumentNullException.ThrowIfNull(systemRef, nameof(systemRef));
         ArgumentNullException.ThrowIfNull(address, nameof(address));
 
         var actorRef = new SystemActorRefDecorator();
 
-        var completion = systemRef.Send(Message.Value(new RunMessage(address, actorRef)));
+        var request = systemRef.Send(Message.Value(new RunMessage(address, actorRef)));
 
-        actorRef.SetCompletion(completion);
+        actorRef.SetCompletion(request.Completion);
 
         return actorRef;
     }
@@ -108,16 +114,9 @@ public static class System
         private IActorRef actorRef;
         private Task completion;
 
-        Task IActorRef.Send(IMessage message)
+        IRequest IActorRef.Send(IMessage message, CancellationToken token)
         {
-            return SendAsync(message);
-        }
-
-        private async Task SendAsync(IMessage message)
-        {
-            await completion;
-
-            await actorRef.Send(message);
+            return new SystemRequestDecorator(this, message, token);
         }
 
         public void SetActorRef(IActorRef actorRef)
@@ -128,6 +127,34 @@ public static class System
         public void SetCompletion(Task completion)
         {
             this.completion = completion;
+        }
+
+        private class SystemRequestDecorator : IRequest
+        {
+            private readonly CancellationTokenSource cancellation = new();
+            private readonly SystemActorRefDecorator systemActorRef;
+
+            public SystemRequestDecorator(SystemActorRefDecorator systemActorRef, IMessage message, CancellationToken token)
+            {
+                this.systemActorRef = systemActorRef;
+                
+                Completion = SendAsync(message, token);
+            }
+            
+            public Task Completion { get; }
+
+            private async Task SendAsync(IMessage message, CancellationToken token)
+            {
+                await systemActorRef.completion;
+
+                var request = systemActorRef.actorRef.Send(message, token);
+
+                request.Cancellation.Register(cancellation.Cancel);
+
+                await request.Completion;
+            }
+
+            public CancellationToken Cancellation => cancellation.Token;
         }
     }
 

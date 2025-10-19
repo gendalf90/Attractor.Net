@@ -170,12 +170,12 @@ public static class Actor
             return ValueTask.CompletedTask;
         }
 
-        Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
+        Task IActor.ReceiveAsync(IContext context, CancellationToken token)
         {
             return token.IsCancellationRequested ? Task.FromCanceled(token) : Task.CompletedTask;
         }
 
-        Task IActor.OnStartAsync(IContext context, CancellationToken token)
+        Task IActor.StartAsync(IContext context, CancellationToken token)
         {
             return token.IsCancellationRequested ? Task.FromCanceled(token) : Task.CompletedTask;
         }
@@ -198,14 +198,14 @@ public static class Actor
             return onDispose == null ? decoratee.DisposeAsync() : onDispose(decoratee.DisposeAsync);
         }
 
-        Task IActor.OnReceiveAsync(IContext context, CancellationToken token)
+        Task IActor.ReceiveAsync(IContext context, CancellationToken token)
         {
-            return onReceive == null ? decoratee.OnReceiveAsync(context, token) : onReceive(decoratee.OnReceiveAsync, context, token);
+            return onReceive == null ? decoratee.ReceiveAsync(context, token) : onReceive(decoratee.ReceiveAsync, context, token);
         }
 
-        Task IActor.OnStartAsync(IContext context, CancellationToken token)
+        Task IActor.StartAsync(IContext context, CancellationToken token)
         {
-            return onStart == null ? decoratee.OnStartAsync(context, token) : onStart(decoratee.OnStartAsync, context, token);
+            return onStart == null ? decoratee.StartAsync(context, token) : onStart(decoratee.StartAsync, context, token);
         }
     }
 }
