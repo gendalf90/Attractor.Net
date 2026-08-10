@@ -1,5 +1,4 @@
-﻿using System;
-using System.Threading;
+﻿using System.Threading;
 using System.Threading.Tasks;
 
 namespace Attractor.Implementation;
@@ -10,14 +9,10 @@ public delegate Task ReceiveAsync(IContext context, CancellationToken token = de
 
 public delegate void Receive(IContext context);
 
-public delegate Task ReceiveAsync<T>(T value, IContext context, CancellationToken token = default);
+public delegate Task ReceiveAsync<T>(T value, CancellationToken token = default);
 
-public delegate void Receive<T>(T value, IContext context);
+public delegate void Receive<T>(T value);
 
-public delegate ValueTask DecorateDisposeAsync(Func<ValueTask> next);
+public delegate void Configure(IBuilder<IHandler> builder);
 
-public delegate ValueTask<bool> OnMatch(IContext context, CancellationToken token = default);
-
-public delegate void Configure(IActorBuilder builder);
-
-public delegate void DecorateConfigure(Configure next, IActorBuilder builder);
+public delegate void DecorateConfigure(Configure next, IBuilder<IHandler> builder);

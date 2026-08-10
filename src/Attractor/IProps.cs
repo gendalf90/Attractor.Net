@@ -2,5 +2,5 @@ namespace Attractor;
 
 public interface IProps
 {
-    void Configure(IActorBuilder builder);
+    void Configure(IBuilder<IHandler> builder);
 }

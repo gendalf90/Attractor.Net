@@ -6,74 +6,94 @@ namespace Attractor.Implementation;
 
 public static class Actor
 {
-    public static IActorProcess Run(IProps properties, CancellationToken token = default)
+    private static readonly AsyncLocal<ICancellation> CurrentCancellation = new();
+    
+    private static readonly IHandler Default = new DefaultHandler();
+
+    public static ICancellation Cancellation => CurrentCancellation.Value;
+    
+    public static IActor Run(IProps properties, CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(properties, nameof(properties));
 
-        var builder = new ActorBuilder(new DefaultInstance());
+        var builder = new Builder<IHandler>(Default);
 
         properties.Configure(builder);
 
-        var actor = builder.Build();
-        var process = new Process(actor, token);
-
-        process.Start();
+        var handler = builder.Build();
+        var process = new Process(handler, token);
 
         return process;
     }
 
-    public static void Use<T>(this IActorBuilder builder, T value) where T : class
+    private static IDisposable UseCancellation(ICancellation cancellation)
+    {
+        var current = CurrentCancellation.Value;
+
+        CurrentCancellation.Value = cancellation;
+
+        return Disposable.Create(() => CurrentCancellation.Value = current);
+    }
+
+    private class Process : IActor
+    {
+        private readonly Strand strand;
+        private readonly IHandler handler;
+        private readonly CancellationToken cancellation;
+        private readonly Latch latch;
+
+        public Process(IHandler handler, CancellationToken cancellation)
+        {
+            this.handler = handler;
+            this.cancellation = cancellation;
+            
+            strand = new Strand();
+            latch = new Latch(strand);
+        }
+
+        public async Task Send(IMessage message, CancellationToken token)
+        {
+            using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation, token);
+            
+            using (await latch.Use(source.Token))
+            using (UseCancellation(this))
+            {
+                await HandleMessage(message, source.Token);
+            }
+        }
+
+        private async Task HandleMessage(IMessage message, CancellationToken token)
+        {
+            await strand.Run(async () => 
+            {
+                await handler.OnReceive(Context.From(builder =>
+                {
+                    message.Configure(builder);
+                    builder.Set<ICancellation>(this);
+                }), token);
+            });
+        }
+
+        public CancellationToken Token => cancellation;
+    }
+
+    public static void Use<T>(this IBuilder<IHandler> builder, T value) where T : class
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(value, nameof(value));
 
-        Task Strategy(ReceiveAsync next, IContext context, CancellationToken token) => next(context.With(value), token);
-
-        builder.Decorate(() => new DecoratorInstance(onStart: Strategy, onReceive: Strategy));
+        builder.Decorate(() => new HandlerDecorator((next, context, token) => next(context.With(value), token)));
     }
 
-    public static void OnStart(this IActorBuilder builder, DecorateReceiveAsync strategy)
+    public static void OnReceive(this IBuilder<IHandler> builder, DecorateReceiveAsync strategy)
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
 
-        builder.Decorate(() => new DecoratorInstance(onStart: strategy));
+        builder.Decorate(() => new HandlerDecorator(strategy));
     }
 
-    public static void OnStart(this IActorBuilder builder, ReceiveAsync strategy)
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
-
-        builder.OnStart(async (next, context, token) =>
-        {
-            await next(context, token);
-            await strategy(context, token);
-        });
-    }
-
-    public static void OnStart(this IActorBuilder builder, Receive strategy)
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
-
-        builder.OnStart((context, _) =>
-        {
-            strategy(context);
-
-            return Task.CompletedTask;
-        });
-    }
-
-    public static void OnReceive(this IActorBuilder builder, DecorateReceiveAsync strategy)
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
-
-        builder.Decorate(() => new DecoratorInstance(onReceive: strategy));
-    }
-
-    public static void OnReceive(this IActorBuilder builder, ReceiveAsync strategy)
+    public static void OnReceive(this IBuilder<IHandler> builder, ReceiveAsync strategy)
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
@@ -85,7 +105,7 @@ public static class Actor
         });
     }
 
-    public static void OnReceive(this IActorBuilder builder, Receive strategy)
+    public static void OnReceive(this IBuilder<IHandler> builder, Receive strategy)
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
@@ -98,7 +118,7 @@ public static class Actor
         });
     }
 
-    public static void OnReceive<T>(this IActorBuilder builder, ReceiveAsync<T> strategy) where T : class
+    public static void OnReceive<T>(this IBuilder<IHandler> builder, ReceiveAsync<T> strategy) where T : class
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
@@ -109,103 +129,47 @@ public static class Actor
 
             if (value != null)
             {
-                await strategy(value, context, token);
+                await strategy(value, token);
             }
         });
     }
 
-    public static void OnReceive<T>(this IActorBuilder builder, Receive<T> strategy) where T : class
+    public static void OnReceive<T>(this IBuilder<IHandler> builder, Receive<T> strategy) where T : class
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
 
-        builder.OnReceive<T>((value, context, _) =>
+        builder.OnReceive((context) =>
         {
-            strategy(value, context);
+            var value = context.Get<T>();
 
-            return Task.CompletedTask;
-        });
-    }
-
-    public static void OnDispose(this IActorBuilder builder, DecorateDisposeAsync strategy)
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
-
-        builder.Decorate(() => new DecoratorInstance(onDispose: strategy));
-    }
-
-    public static void OnDispose(this IActorBuilder builder, Func<ValueTask> strategy)
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
-
-        builder.OnDispose(async next =>
-        {
-            await using (Disposable.Create(strategy))
+            if (value != null)
             {
-                await next();
+                strategy(value);
             }
         });
     }
 
-    public static void OnDispose(this IActorBuilder builder, Action strategy)
+    private class DefaultHandler : IHandler
     {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
-
-        builder.OnDispose(async next =>
-        {
-            using (Disposable.Create(strategy))
-            {
-                await next();
-            }
-        });
-    }
-
-    private class DefaultInstance : IActor
-    {
-        ValueTask IAsyncDisposable.DisposeAsync()
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        Task IActor.ReceiveAsync(IContext context, CancellationToken token)
-        {
-            return token.IsCancellationRequested ? Task.FromCanceled(token) : Task.CompletedTask;
-        }
-
-        Task IActor.StartAsync(IContext context, CancellationToken token)
+        Task IHandler.OnReceive(IContext context, CancellationToken token)
         {
             return token.IsCancellationRequested ? Task.FromCanceled(token) : Task.CompletedTask;
         }
     }
 
-    private class DecoratorInstance(
-        DecorateReceiveAsync onReceive = null,
-        DecorateReceiveAsync onStart = null,
-        DecorateDisposeAsync onDispose = null) : IActor, IDecorator<IActor>
+    private class HandlerDecorator(DecorateReceiveAsync onReceive = null) : IHandler, IDecorator<IHandler>
     {
-        private IActor decoratee;
+        private IHandler decoratee;
 
-        public void Decorate(IActor value)
+        void IDecorator<IHandler>.Decorate(IHandler value)
         {
             decoratee = value;
         }
 
-        ValueTask IAsyncDisposable.DisposeAsync()
+        Task IHandler.OnReceive(IContext context, CancellationToken token)
         {
-            return onDispose == null ? decoratee.DisposeAsync() : onDispose(decoratee.DisposeAsync);
-        }
-
-        Task IActor.ReceiveAsync(IContext context, CancellationToken token)
-        {
-            return onReceive == null ? decoratee.ReceiveAsync(context, token) : onReceive(decoratee.ReceiveAsync, context, token);
-        }
-
-        Task IActor.StartAsync(IContext context, CancellationToken token)
-        {
-            return onStart == null ? decoratee.StartAsync(context, token) : onStart(decoratee.StartAsync, context, token);
+            return onReceive == null ? decoratee.OnReceive(context, token) : onReceive(decoratee.OnReceive, context, token);
         }
     }
 }

@@ -4,5 +4,5 @@ namespace Attractor;
 
 public interface ICancellation
 {
-    CancellationToken Cancellation { get; }
+    CancellationToken Token { get; }
 }

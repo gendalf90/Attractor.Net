@@ -1,6 +1,6 @@
 ﻿namespace Attractor;
 
-public interface IAddressPolicy
+public interface IRouter
 {
     bool IsMatch(IAddress address);
 }

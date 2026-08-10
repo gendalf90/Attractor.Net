@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace Attractor.Implementation;
 
 public static class Context
-{
+{    
     public static IContext Empty { get; } = new EmptyInstance();
 
     public static IContext Value<T>(T value) where T : class

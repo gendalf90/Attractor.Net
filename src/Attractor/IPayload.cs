@@ -1,8 +1,8 @@
-﻿using System;
+using System.Buffers;
 
 namespace Attractor;
 
 public interface IPayload
 {
-    ReadOnlySpan<byte> GetBytes();
+    void Write(IBufferWriter<byte> buffer);
 }

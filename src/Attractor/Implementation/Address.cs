@@ -1,64 +1,64 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace Attractor.Implementation;
 
 public static class Address
 {
+    private static readonly AsyncLocal<IAddress> CurrentAddress = new();
+
     public static IEqualityComparer<IAddress> EqualityComparer { get; } = new AddressEqualityComparer();
 
-    public static IAddress Empty { get; } = new BytesAddress([]);
+    public static IAddress Current => CurrentAddress.Value;
 
-    public static IAddressPolicy FromStrategy(Predicate<IAddress> predicate)
+    public static IRouter FromStrategy(Predicate<IAddress> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
 
         return new StrategyAddressPolicy(predicate);
     }
 
-    public static IAddressPolicy FromExact(IAddress address)
+    public static IRouter FromExact(IAddress address)
     {
         ArgumentNullException.ThrowIfNull(address, nameof(address));
 
-        return FromStrategy(address.Equals);
+        return FromStrategy(value => EqualityComparer.Equals(value, address));
     }
 
-    public static IAddress FromBytes(params byte[] value)
+    public static IAddress FromString(string value)
     {
         ArgumentNullException.ThrowIfNull(value, nameof(value));
 
-        return new BytesAddress(value);
+        return new StringAddress(value);
     }
 
-    private class BytesAddress(byte[] bytes) : IAddress
+    internal static IDisposable UseAddress(IAddress address)
     {
-        public bool Equals(IAddress other)
-        {
-            return other != null && other.GetBytes().SequenceEqual(bytes);
-        }
+        var current = CurrentAddress.Value;
+
+        CurrentAddress.Value = address;
+
+        return Disposable.Create(() => CurrentAddress.Value = current);
+    }
+    
+    private class StringAddress(string str) : IAddress
+    {
+        public string Value => str;
 
         public override bool Equals(object obj)
         {
-            return Equals(obj as IAddress);
-        }
+            if (obj is not IAddress other)
+            {
+                return false;
+            }
 
-        public ReadOnlySpan<byte> GetBytes()
-        {
-            return bytes;
+            return EqualityComparer.Equals(this, other);
         }
 
         public override int GetHashCode()
         {
-            var result = new HashCode();
-
-            result.AddBytes(bytes);
-
-            return result.ToHashCode();
-        }
-
-        public override string ToString()
-        {
-            return BitConverter.ToString(bytes);
+            return EqualityComparer.GetHashCode(this);
         }
     }
 
@@ -66,23 +66,18 @@ public static class Address
     {
         public bool Equals(IAddress first, IAddress second)
         {
-            ArgumentNullException.ThrowIfNull(first, nameof(first));
-            ArgumentNullException.ThrowIfNull(second, nameof(second));
-
-            return first.Equals(second);
+            return ReferenceEquals(first, second) || string.Equals(first.Value, second.Value, StringComparison.Ordinal);
         }
 
         public int GetHashCode(IAddress obj)
         {
-            ArgumentNullException.ThrowIfNull(obj, nameof(obj));
-
-            return obj.GetHashCode();
+            return obj == null ? 0 : obj.Value.GetHashCode(StringComparison.Ordinal);
         }
     }
 
-    private class StrategyAddressPolicy(Predicate<IAddress> Strategy) : IAddressPolicy
+    private class StrategyAddressPolicy(Predicate<IAddress> Strategy) : IRouter
     {
-        bool IAddressPolicy.IsMatch(IAddress address)
+        bool IRouter.IsMatch(IAddress address)
         {
             return Strategy(address);
         }

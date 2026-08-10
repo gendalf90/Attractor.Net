@@ -1,5 +1,6 @@
-﻿using System;
+﻿namespace Attractor;
 
-namespace Attractor;
-
-public interface IAddress : IPayload, IEquatable<IAddress>;
+public interface IAddress
+{
+    string Value { get; }
+}

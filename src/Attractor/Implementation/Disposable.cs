@@ -51,6 +51,31 @@ internal static class Disposable
         });
     }
 
+    public static IDisposable With(this IDisposable first, IDisposable second)
+    {
+        return Combine(first, second);
+    }
+
+    public static IAsyncDisposable With(this IAsyncDisposable first, IAsyncDisposable second)
+    {
+        return Combine(first, second);
+    }
+
+    public static IAsyncDisposable With(this IAsyncDisposable first, IDisposable second)
+    {
+        return Combine(first, Async(second));
+    }
+
+    public static IAsyncDisposable Async(IDisposable value)
+    {
+        return Create(() =>
+        {
+            value.Dispose();
+
+            return ValueTask.CompletedTask;
+        });
+    }
+
     private class StrategyInstance(Action sync = null, Func<ValueTask> async = null) : IDisposable, IAsyncDisposable
     {
         ValueTask IAsyncDisposable.DisposeAsync()
