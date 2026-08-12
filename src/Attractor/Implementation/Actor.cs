@@ -53,6 +53,8 @@ public static class Actor
 
         public async Task Send(IMessage message, CancellationToken token)
         {
+            ArgumentNullException.ThrowIfNull(message, nameof(message));
+            
             using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation, token);
             
             using (await latch.Use(source.Token))
@@ -77,7 +79,7 @@ public static class Actor
         public CancellationToken Token => cancellation;
     }
 
-    public static void Use<T>(this IBuilder<IHandler> builder, T value) where T : class
+    public static void With<T>(this IBuilder<IHandler> builder, T value) where T : class
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(value, nameof(value));

@@ -37,6 +37,8 @@ public class ActorTests
         actorSource.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => actor.Send("test"));
+
+        Assert.True(actor.Token.IsCancellationRequested);
     }
 
     [Fact]

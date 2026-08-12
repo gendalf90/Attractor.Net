@@ -19,11 +19,23 @@ public static class Address
         return new StrategyAddressPolicy(predicate);
     }
 
+    public static IRouter FromStrategy(Predicate<string> predicate)
+    {
+        ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
+        
+        return FromStrategy(address => predicate(address.Value));
+    }
+
     public static IRouter FromExact(IAddress address)
     {
         ArgumentNullException.ThrowIfNull(address, nameof(address));
 
         return FromStrategy(value => EqualityComparer.Equals(value, address));
+    }
+
+    public static IRouter FromExact(string address)
+    {
+        return FromExact(FromString(address));
     }
 
     public static IAddress FromString(string value)

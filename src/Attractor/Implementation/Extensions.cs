@@ -75,7 +75,21 @@ public static class Extensions
 
     public static Task Send<T>(this IRef actor, T message, CancellationToken token = default) where T : class
     {
+        ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+        
         return actor.Send(Message.Value(message), token);
+    }
+
+    public static void Fire(this IRef actor, IMessage message, CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor, nameof(actor));
+        
+        _ = actor.Send(message, token);
+    }
+
+    public static void Fire<T>(this IRef actor, T message, CancellationToken token = default) where T : class
+    {
+        actor.Fire(Message.Value(message), token);
     }
 
     private static Func<TResult> Partial<T, TResult>(Func<T, TResult> func, T value)

@@ -45,7 +45,7 @@ public static class Stage
             registrations.AddFirst(new ActorRegistration(router, props));
         }
 
-        private Task Run(IAddress address)
+        private Task<bool> Run(IAddress address)
         {
             return strand.Run(async () =>
             {
@@ -55,21 +55,21 @@ public static class Stage
                     {
                         process.Use();
 
-                        return;
+                        return true;
                     }
 
                     var registration = registrations.FirstOrDefault(value => value.Router.IsMatch(address));
 
                     if (registration == null)
                     {
-                        throw new ArgumentNullException();
+                        return false;
                     }
 
                     var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
                     var actor = Actor.Run(registration.Props.With(Props.From(builder => 
                     {
-                        builder.Use<IStage>(this);
-                        builder.Use(address);
+                        builder.With<IStage>(this);
+                        builder.With(address);
                     })), source.Token);
                     var disposing = Disposable.Create(() =>
                     {
@@ -83,6 +83,8 @@ public static class Stage
                     process.Use();
 
                     actors.Add(address, process);
+
+                    return true;
                 }
             });
         }
@@ -214,9 +216,9 @@ public static class Stage
         {
             private readonly Lock sync = new();
 
-            private bool started = false;
+            private Task<bool> runTask = null;
             private bool disposed = false;
-            
+
             public Task Send(IMessage message, CancellationToken token)
             {
                 lock (sync)
@@ -226,26 +228,18 @@ public static class Stage
                         throw new ObjectDisposedException(nameof(IProxy));
                     }
 
-                    if (started)
+                    if (runTask == null)
                     {
-                        return stage.Send(address, message, token);
+                        runTask = stage.Run(address);
                     }
 
-                    started = true;
-
-                    return RunAndSend(message, token);
+                    return stage.Send(address, message, token);
                 }
-            }
-
-            private async Task RunAndSend(IMessage message, CancellationToken token)
-            {
-                await stage.Run(address);
-                await stage.Send(address, message, token);
             }
 
             public void Dispose()
             {
-                DisposeInternal();
+                _ = DisposeInternal();
             }
 
             public ValueTask DisposeAsync()
@@ -253,25 +247,56 @@ public static class Stage
                 return new ValueTask(DisposeInternal());
             }
 
-            private Task DisposeInternal()
+            private async Task DisposeInternal()
             {
+                var currentRunTask = Task.FromResult(false);
+                
                 lock (sync)
                 {
                     if (disposed)
                     {
-                        return Task.CompletedTask;
+                        return;
                     }
 
                     disposed = true;
 
-                    if (!started)
+                    if (runTask != null)
                     {
-                        return Task.CompletedTask;
+                        currentRunTask = runTask;
                     }
+                }
 
-                    return stage.Stop(address);
+                var needStop = await currentRunTask;
+
+                if (needStop)
+                {
+                    await stage.Stop(address);
                 }
             }
         }
+    }
+
+    public static async Task Shoot(this IStage stage, IAddress address, IMessage message, CancellationToken token = default)
+    {
+        ArgumentNullException.ThrowIfNull(stage, nameof(stage));
+
+        await using var proxy = stage.Play(address);
+
+        await proxy.Send(message, token);
+    }
+
+    public static Task Shoot<T>(this IStage stage, IAddress address, T message, CancellationToken token = default) where T : class
+    {
+        return stage.Shoot(address, Message.Value(message), token);
+    }
+
+    public static Task Shoot<T>(this IStage stage, string address, T message, CancellationToken token = default) where T : class
+    {
+        return stage.Shoot(Address.FromString(address), message, token);
+    }
+
+    public static IProxy Play(this IStage stage, string address)
+    {
+        return stage.Play(Address.FromString(address));
     }
 }
