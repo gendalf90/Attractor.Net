@@ -27,6 +27,26 @@ public class SystemTests
     }
 
     [Fact]
+    public async Task Stage_SendMessage_MessageIsReceivedInCommonHandler()
+    {
+        // Arrange
+        var message = "test";
+        var received = false;
+        var address = Address.FromString("test");
+        var stage = Stage.Run(registry =>
+        {
+            registry.OnReceive<string>(value => received = value == message);
+            registry.Register(Address.FromExact(address), Props.Empty);
+        });
+    
+        // Act
+        await stage.Shoot(address, message);
+        
+        // Assert
+        Assert.True(received);
+    }
+
+    [Fact]
     public async Task Stage_SendMessage_ErrorIfActorIsNotRegistered()
     {
         // Arrange
@@ -96,7 +116,6 @@ public class SystemTests
         // Arrange
         var nullBeforeSend = false;
         var nullAfterSend = false;
-        var hasInContext = false;
         var hasInStatic = false;
         var address = Address.FromString("test");
         var stage = Stage.Run(registry =>
@@ -105,7 +124,6 @@ public class SystemTests
             {
                 builder.OnReceive(context =>
                 {
-                    hasInContext = context.Exist<IStage>() && context.Exist<IAddress>();
                     hasInStatic = Stage.Current != null && Address.Current != null;
                 });
             }));
@@ -120,7 +138,6 @@ public class SystemTests
         
         // Assert
         Assert.True(nullBeforeSend);
-        Assert.True(hasInContext);
         Assert.True(hasInStatic);
         Assert.True(nullAfterSend);
     }
@@ -184,11 +201,12 @@ public class SystemTests
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
-                builder.Handle(provider => provider.GetRequiredService<TestHandler>());
+                builder.Handle<TestHandler>();
             }));
         });
 
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
+
         var stage = provider.GetRequiredService<IStage>();
     
         // Act

@@ -29,20 +29,28 @@ public static class Stage
         private readonly Dictionary<IAddress, ActorProcess> actors = new(Address.EqualityComparer);
         private readonly Dictionary<IAddress, ActorLatch> latches = new(Address.EqualityComparer);
         private readonly LinkedList<ActorRegistration> registrations = new();
+        private IProps props = Props.Empty;
 
-        public IProxy Play(IAddress address)
+        IProxy IStage.Play(IAddress address)
         {
             ArgumentNullException.ThrowIfNull(address, nameof(address));
 
             return new ActorProxy(address, this);
         }
 
-        public void Register(IRouter router, IProps props)
+        void IRegistry.Register(IRouter router, IProps props)
         {
             ArgumentNullException.ThrowIfNull(router, nameof(router));
             ArgumentNullException.ThrowIfNull(props, nameof(props));
 
             registrations.AddFirst(new ActorRegistration(router, props));
+        }
+
+        void IBuilder<IHandler>.Decorate<T>(Func<T> factory)
+        {
+            ArgumentNullException.ThrowIfNull(factory, nameof(factory));
+
+            props = props.With(builder => builder.Decorate(factory));
         }
 
         private Task<bool> Run(IAddress address)
@@ -66,11 +74,7 @@ public static class Stage
                     }
 
                     var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-                    var actor = Actor.Run(registration.Props.With(Props.From(builder => 
-                    {
-                        builder.With<IStage>(this);
-                        builder.With(address);
-                    })), source.Token);
+                    var actor = Actor.Run(registration.Props.With(props), source.Token);
                     var disposing = Disposable.Create(() =>
                     {
                         source.Cancel();

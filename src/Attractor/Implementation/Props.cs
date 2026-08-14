@@ -33,6 +33,11 @@ public static class Props
         });
     }
 
+    public static IProps With(this IProps first, Configure configuration)
+    {
+        return With(first, From(configuration));
+    }
+
     private class EmptyInstance : IProps
     {
         public void Configure(IBuilder<IHandler> builder) {}

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace Attractor.Implementation;
@@ -24,6 +25,13 @@ public static class Address
         ArgumentNullException.ThrowIfNull(predicate, nameof(predicate));
         
         return FromStrategy(address => predicate(address.Value));
+    }
+
+    public static IRouter FromRegex(string pattern)
+    {
+        ArgumentNullException.ThrowIfNull(pattern, nameof(pattern));
+        
+        return FromStrategy(address => Regex.IsMatch(address, pattern));
     }
 
     public static IRouter FromExact(IAddress address)

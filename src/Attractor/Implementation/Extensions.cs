@@ -28,15 +28,20 @@ public static class Extensions
 
     private class ProviderRegistryDecorator(IRegistry registry, IServiceProvider provider) : IRegistry
     {
-        public void Register(IRouter router, IProps props)
+        void IRegistry.Register(IRouter router, IProps props)
         {
             registry.Register(router, new ProviderPropsDecorator(props, provider));
+        }
+
+        void IBuilder<IHandler>.Decorate<T>(Func<T> factory)
+        {
+            registry.Decorate(factory);
         }
     }
 
     private class ProviderPropsDecorator(IProps props, IServiceProvider provider) : IProps
     {
-        public void Configure(IBuilder<IHandler> builder)
+        void IProps.Configure(IBuilder<IHandler> builder)
         {
             using (UseProvider(provider))
             {
@@ -65,12 +70,26 @@ public static class Extensions
         builder.Decorate(provider => new HandlerDecorator(factory(provider)));
     }
 
+    public static void Handle<T>(this IBuilder<IHandler> builder) where T : class, IHandler
+    {
+        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+        
+        builder.Handle(provider => provider.GetRequiredService<T>());
+    }
+
     public static void Decorate<T>(this IBuilder<IHandler> builder, Func<IServiceProvider, T> factory) where T : class, IHandler, IDecorator<IHandler>
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(factory, nameof(factory));
         
         builder.Decorate(Partial(factory, Provider.Value ?? throw new InvalidOperationException()));
+    }
+
+    public static void Decorate<T>(this IBuilder<IHandler> builder) where T : class, IHandler, IDecorator<IHandler>
+    {
+        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+        
+        builder.Decorate(provider => provider.GetRequiredService<T>());
     }
 
     public static Task Send<T>(this IRef actor, T message, CancellationToken token = default) where T : class

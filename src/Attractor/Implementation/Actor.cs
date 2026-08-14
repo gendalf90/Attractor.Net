@@ -68,11 +68,7 @@ public static class Actor
         {
             await strand.Run(async () => 
             {
-                await handler.OnReceive(Context.From(builder =>
-                {
-                    message.Configure(builder);
-                    builder.Set<ICancellation>(this);
-                }), token);
+                await handler.OnReceive(Context.From(message.Configure), token);
             });
         }
 

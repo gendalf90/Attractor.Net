@@ -71,13 +71,11 @@ public class ActorTests
         // Arrange
         var nullBeforeSend = false;
         var nullAfterSend = false;
-        var hasInContext = false;
         var hasInStatic = false;
         var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive(context =>
             {
-                hasInContext = context.Exist<ICancellation>();
                 hasInStatic = Actor.Cancellation != null;
             });
         }));
@@ -91,7 +89,6 @@ public class ActorTests
         
         // Assert
         Assert.True(nullBeforeSend);
-        Assert.True(hasInContext);
         Assert.True(hasInStatic);
         Assert.True(nullAfterSend);
     }

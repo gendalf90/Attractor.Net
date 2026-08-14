@@ -4,6 +4,7 @@
     <Project Path="src/Attractor/Attractor.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Attractor.Benchmark/Attractor.Benchmark.csproj" />
     <Project Path="tests/Attractor.Units/Attractor.Units.csproj" />
   </Folder>
 </Solution>
