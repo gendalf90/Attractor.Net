@@ -55,7 +55,11 @@ public class RegistrationTests
         services.AddSingleton(results);
         services.AddActors(Assembly.GetExecutingAssembly());
         services.AddTransient(_ => new TestHandler(_ => results.Add("test")));
-        services.AddStage(registry => registry.Handle<TestHandler>());
+        services.AddStage(registry => 
+        {
+            registry.UseActors();
+            registry.Handle<TestHandler>();
+        });
 
         using var provider = services.BuildServiceProvider();
 

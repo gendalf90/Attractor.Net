@@ -106,11 +106,13 @@ internal class Strand
 
     private class StrandingSynchronizationContext : SynchronizationContext
     {
+        private const long LockValue = 1;
+        private const long UnlockValue = 0;
+
         private readonly ConcurrentQueue<(SendOrPostCallback Callback, object State)> queue = new();
-        private readonly Lock sync = new();
         private readonly WaitCallback execute;
 
-        private bool running = false;
+        private long counter = UnlockValue;
 
         public StrandingSynchronizationContext()
         {
@@ -150,6 +152,8 @@ internal class Strand
 
         private void Execute(object state)
         {
+            ResetLock();
+            
             try
             {
                 Process();
@@ -166,27 +170,17 @@ internal class Strand
 
         private void Unlock()
         {
-            lock (sync)
+            if (!TryUnlock())
             {
-                if (queue.IsEmpty)
-                {
-                    running = false;
-                }
-                else
-                {
-                    running = ThreadPool.QueueUserWorkItem(execute);
-                }
+                ThreadPool.QueueUserWorkItem(execute);
             }
         }
 
         public void Touch()
         {
-            lock (sync)
+            if (TryLock())
             {
-                if (!running)
-                {
-                    running = ThreadPool.QueueUserWorkItem(execute);
-                }
+                ThreadPool.QueueUserWorkItem(execute);
             }
         }
 
@@ -205,6 +199,21 @@ internal class Strand
                     continue;
                 }
             }
+        }
+
+        private bool TryLock()
+        {
+            return Interlocked.Increment(ref counter) == LockValue;
+        }
+
+        private bool TryUnlock()
+        {
+            return Interlocked.Decrement(ref counter) == UnlockValue;
+        }
+
+        private void ResetLock()
+        {
+            Interlocked.Exchange(ref counter, LockValue);
         }
     }
 }

@@ -31,7 +31,7 @@ public static class Cache
             latch = new Latch(strand);
         }
         
-        public IRef Get(IAddress address)
+        IRef ICache.Get(IAddress address)
         {
             ArgumentNullException.ThrowIfNull(address, nameof(address));
             

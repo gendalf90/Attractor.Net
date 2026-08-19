@@ -3,11 +3,11 @@ namespace Attractor.Implementation;
 public static class Actor
 {
     private static readonly AsyncLocal<ICancellation> CurrentCancellation = new();
-    
+
     private static readonly IHandler Default = new DefaultHandler();
 
     public static ICancellation Cancellation => CurrentCancellation.Value;
-    
+
     public static IActor Run(IProps properties, CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(properties, nameof(properties));

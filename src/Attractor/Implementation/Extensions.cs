@@ -6,8 +6,6 @@ namespace Attractor.Implementation;
 
 public static class Extensions
 {
-    private static readonly ThreadLocal<IServiceProvider> Provider = new();
-
     public static IServiceCollection AddActors(this IServiceCollection services, Assembly assembly)
     {
         ArgumentNullException.ThrowIfNull(services, nameof(services));
@@ -40,9 +38,10 @@ public static class Extensions
 
     private record RegisteredActorInfo(Type Type, Type[] ReceiverTypes);
     
-    public static IServiceCollection AddStage(this IServiceCollection services, Action<IRegistry> configuration = null)
+    public static IServiceCollection AddStage(this IServiceCollection services, Action<IRegistry> configuration)
     {
         ArgumentNullException.ThrowIfNull(services, nameof(services));
+        ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
         
         return services.AddSingleton<IStage>(provider => new HostStage(provider, Decorate(configuration, provider)));
     }
@@ -51,40 +50,45 @@ public static class Extensions
     {
         return registry =>
         {
-            IRegistry providerRegistry = new ProviderRegistryDecorator(registry, provider);
-            
-            var receiver = typeof(Extensions)
-                .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
-                .Single(method => method.Name == nameof(RegisterReceiver));
-            
-            foreach (var info in provider.GetServices<RegisteredActorInfo>())
+            using (Provider.UseProvider(provider))
             {
-                providerRegistry.Register(Address.FromExact(info.Type.Name), Props.From(builder =>
-                {
-                    var instance = provider.GetRequiredService(info.Type);
-
-                    if (instance is IHandler handler)
-                    {
-                        builder.OnReceive(handler.OnReceive);
-                    }
-
-                    foreach (var type in info.ReceiverTypes)
-                    {
-                        receiver.MakeGenericMethod(type).Invoke(null, [builder, instance]);
-                    }
-
-                    if (instance is IProps props)
-                    {
-                        props.Configure(builder);
-                    }
-                }));
-            }
-
-            using (UseProvider(provider))
-            {
-                configuration?.Invoke(providerRegistry);
+                configuration.Invoke(new ProviderRegistryDecorator(registry, provider));
             }
         };
+    }
+
+    public static void UseActors(this IRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry, nameof(registry));
+
+        var receiver = typeof(Extensions)
+            .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+            .Single(method => method.Name == nameof(RegisterReceiver));
+
+        var provider = Provider.Current ?? throw new InvalidOperationException();
+        
+        foreach (var info in provider.GetServices<RegisteredActorInfo>())
+        {
+            registry.Register(Address.FromExact(info.Type.Name), Props.From(builder =>
+            {
+                var instance = provider.GetRequiredService(info.Type);
+
+                if (instance is IHandler handler)
+                {
+                    builder.OnReceive(handler.OnReceive);
+                }
+
+                foreach (var type in info.ReceiverTypes)
+                {
+                    receiver.MakeGenericMethod(type).Invoke(null, [builder, instance]);
+                }
+
+                if (instance is IProps props)
+                {
+                    props.Configure(builder);
+                }
+            }));
+        }
     }
 
     private static void RegisterReceiver<T>(IBuilder<IHandler> builder, object instance) where T : class
@@ -111,23 +115,11 @@ public static class Extensions
     {
         void IProps.Configure(IBuilder<IHandler> builder)
         {
-            using (UseProvider(provider))
+            using (Provider.UseProvider(provider))
             {
                 props.Configure(builder);
             }
         }
-    }
-
-    private static IDisposable UseProvider(IServiceProvider provider)
-    {
-        var current = Provider.Value;
-
-        Provider.Value = provider;
-
-        return Disposable.Create(() =>
-        {
-            Provider.Value = current; 
-        });
     }
 
     public static void Handle<T>(this IBuilder<IHandler> builder, Func<IServiceProvider, T> factory) where T : class, IHandler
@@ -150,7 +142,7 @@ public static class Extensions
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(factory, nameof(factory));
         
-        builder.Decorate(Partial(factory, Provider.Value ?? throw new InvalidOperationException()));
+        builder.Decorate(Partial(factory, Provider.Current ?? throw new InvalidOperationException()));
     }
 
     public static void Decorate<T>(this IBuilder<IHandler> builder) where T : class, IHandler, IDecorator<IHandler>
