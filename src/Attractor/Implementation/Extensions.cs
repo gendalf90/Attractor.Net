@@ -1,6 +1,4 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -9,11 +7,42 @@ namespace Attractor.Implementation;
 public static class Extensions
 {
     private static readonly ThreadLocal<IServiceProvider> Provider = new();
-    
-    public static IServiceCollection AddStage(this IServiceCollection services, Action<IRegistry> configuration)
+
+    public static IServiceCollection AddActors(this IServiceCollection services, Assembly assembly)
     {
         ArgumentNullException.ThrowIfNull(services, nameof(services));
-        ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
+        ArgumentNullException.ThrowIfNull(assembly, nameof(assembly));
+
+        var infos = assembly
+            .GetTypes()
+            .Where(type => type.IsClass && !type.IsAbstract && type.IsVisible)
+            .Select(type => new
+            {
+                Type = type,
+                IsHandler = typeof(IHandler).IsAssignableFrom(type),
+                ReceiverTypes = type
+                    .GetInterfaces()
+                    .Where(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(IReceiver<>))
+                    .SelectMany(t => t.GetGenericArguments())
+                    .ToArray()
+            })
+            .Where(info => info.IsHandler || info.ReceiverTypes.Length > 0)
+            .Select(info => new RegisteredActorInfo(info.Type, info.ReceiverTypes));
+
+        foreach (var info in infos)
+        {
+            services.AddTransient(info.Type);
+            services.AddSingleton(info);
+        }
+
+        return services;
+    }
+
+    private record RegisteredActorInfo(Type Type, Type[] ReceiverTypes);
+    
+    public static IServiceCollection AddStage(this IServiceCollection services, Action<IRegistry> configuration = null)
+    {
+        ArgumentNullException.ThrowIfNull(services, nameof(services));
         
         return services.AddSingleton<IStage>(provider => new HostStage(provider, Decorate(configuration, provider)));
     }
@@ -22,8 +51,47 @@ public static class Extensions
     {
         return registry =>
         {
-            configuration(new ProviderRegistryDecorator(registry, provider));
+            IRegistry providerRegistry = new ProviderRegistryDecorator(registry, provider);
+            
+            var receiver = typeof(Extensions)
+                .GetMethods(BindingFlags.NonPublic | BindingFlags.Static)
+                .Single(method => method.Name == nameof(RegisterReceiver));
+            
+            foreach (var info in provider.GetServices<RegisteredActorInfo>())
+            {
+                providerRegistry.Register(Address.FromExact(info.Type.Name), Props.From(builder =>
+                {
+                    var instance = provider.GetRequiredService(info.Type);
+
+                    if (instance is IHandler handler)
+                    {
+                        builder.OnReceive(handler.OnReceive);
+                    }
+
+                    foreach (var type in info.ReceiverTypes)
+                    {
+                        receiver.MakeGenericMethod(type).Invoke(null, [builder, instance]);
+                    }
+
+                    if (instance is IProps props)
+                    {
+                        props.Configure(builder);
+                    }
+                }));
+            }
+
+            using (UseProvider(provider))
+            {
+                configuration?.Invoke(providerRegistry);
+            }
         };
+    }
+
+    private static void RegisterReceiver<T>(IBuilder<IHandler> builder, object instance) where T : class
+    {
+        var receiver = (IReceiver<T>)instance;
+        
+        builder.OnReceive<T>(receiver.OnReceive);
     }
 
     private class ProviderRegistryDecorator(IRegistry registry, IServiceProvider provider) : IRegistry
@@ -135,20 +203,21 @@ public static class Extensions
     private class HostStage : IStage
     {
         private readonly IStage stage;
-        private readonly IServiceProvider provider;
         private readonly CancellationTokenSource cancellation;
         
         public HostStage(IServiceProvider provider, Action<IRegistry> configuration)
         {
-            this.provider = provider;
-            
             var lifetime = provider.GetService<IHostApplicationLifetime>();
 
-            cancellation = lifetime == null
-                ? new CancellationTokenSource()
-                : CancellationTokenSource.CreateLinkedTokenSource(lifetime.ApplicationStopping);
-
-            stage = Stage.Run(configuration, cancellation.Token);
+            if (lifetime != null)
+            {
+                stage = Stage.Run(configuration, lifetime.ApplicationStopping);
+            }
+            else
+            {
+                cancellation = new CancellationTokenSource();
+                stage = Stage.Run(configuration, cancellation.Token);
+            }
         }
         
         public IProxy Play(IAddress address)
@@ -160,7 +229,7 @@ public static class Extensions
         {
             using (cancellation)
             {
-                cancellation.Cancel();
+                cancellation?.Cancel();
             }
         }
     }

@@ -1,7 +1,4 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
-
-namespace Attractor.Implementation;
+﻿namespace Attractor.Implementation;
 
 public delegate Task DecorateReceiveAsync(ReceiveAsync next, IContext context, CancellationToken token = default);
 

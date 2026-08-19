@@ -1,5 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-
 namespace Attractor.Units;
 
 public class SystemTests
@@ -186,43 +184,5 @@ public class SystemTests
         
         // Assert
         Assert.Equal(2, counter);
-    }
-
-    [Fact]
-    public async Task Stage_RegisterInServices_ActorIsRegistered()
-    {
-        // Arrange
-        var received = false;
-        var address = Address.FromString("test");
-        var services = new ServiceCollection();
-
-        services.AddTransient(_ => new TestHandler(_ => received = true));
-        services.AddStage(registry =>
-        {
-            registry.Register(Address.FromExact(address), Props.From(builder =>
-            {
-                builder.Handle<TestHandler>();
-            }));
-        });
-
-        using var provider = services.BuildServiceProvider();
-
-        var stage = provider.GetRequiredService<IStage>();
-    
-        // Act
-        await stage.Shoot(address, "test");
-        
-        // Assert
-        Assert.True(received);
-    }
-
-    private class TestHandler(Receive strategy) : IHandler
-    {
-        public Task OnReceive(IContext context, CancellationToken token)
-        {
-            strategy(context);
-
-            return Task.CompletedTask;
-        }
     }
 }

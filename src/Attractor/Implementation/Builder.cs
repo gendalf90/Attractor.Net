@@ -1,5 +1,3 @@
-using System;
-
 namespace Attractor.Implementation;
 
 internal class Builder<TResult>(TResult value) : IBuilder<TResult>

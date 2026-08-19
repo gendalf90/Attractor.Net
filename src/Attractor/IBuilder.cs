@@ -1,5 +1,3 @@
-using System;
-
 namespace Attractor;
 
 public interface IBuilder<TResult>

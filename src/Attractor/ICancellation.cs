@@ -1,5 +1,3 @@
-using System.Threading;
-
 namespace Attractor;
 
 public interface ICancellation

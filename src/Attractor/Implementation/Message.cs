@@ -1,5 +1,3 @@
-using System;
-
 namespace Attractor.Implementation;
 
 public static class Message
