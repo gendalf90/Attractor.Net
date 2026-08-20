@@ -22,10 +22,11 @@ public static class Extensions
                     .GetInterfaces()
                     .Where(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(IReceiver<>))
                     .SelectMany(t => t.GetGenericArguments())
-                    .ToArray()
+                    .ToArray(),
+                type.GetCustomAttribute<AddressAttribute>()?.Pattern
             })
             .Where(info => info.IsHandler || info.ReceiverTypes.Length > 0)
-            .Select(info => new RegisteredActorInfo(info.Type, info.ReceiverTypes));
+            .Select(info => new RegisteredActorInfo(info.Type, info.ReceiverTypes, info.Pattern));
 
         foreach (var info in infos)
         {
@@ -36,7 +37,7 @@ public static class Extensions
         return services;
     }
 
-    private record RegisteredActorInfo(Type Type, Type[] ReceiverTypes);
+    private record RegisteredActorInfo(Type Type, Type[] ReceiverTypes, string Pattern);
     
     public static IServiceCollection AddStage(this IServiceCollection services, Action<IRegistry> configuration)
     {
@@ -69,7 +70,11 @@ public static class Extensions
         
         foreach (var info in provider.GetServices<RegisteredActorInfo>())
         {
-            registry.Register(Address.FromExact(info.Type.Name), Props.From(builder =>
+            var router = string.IsNullOrEmpty(info.Pattern)
+                ? Address.FromExact(info.Type.Name)
+                : Address.FromRegex(info.Pattern);
+            
+            registry.Register(router, Props.From(builder =>
             {
                 var instance = provider.GetRequiredService(info.Type);
 

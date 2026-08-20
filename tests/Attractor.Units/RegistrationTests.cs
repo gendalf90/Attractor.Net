@@ -76,7 +76,12 @@ public class RegistrationTests
         Assert.Equal(1, results.Count(value => value == "double"));
     }
 
-    public class AssemblyTestHandler(List<string> results) : IHandler, IReceiver<Tuple<int>>, IReceiver<Tuple<double>>, IProps
+    [Address($"^{nameof(AssemblyTestHandler)}$")]
+    public class AssemblyTestHandler(List<string> results) : 
+        IHandler, 
+        IReceiver<Tuple<int>>, 
+        IReceiver<Tuple<double>>, 
+        IProps
     {
         public void Configure(IBuilder<IHandler> builder)
         {
