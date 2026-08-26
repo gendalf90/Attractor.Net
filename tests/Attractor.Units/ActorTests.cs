@@ -8,7 +8,8 @@ public class ActorTests
         // Arrange
         var message = "test";
         var received = false;
-        var actor = Actor.Run(Props.From(builder =>
+
+        await using var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive<string>(value => received = value == message);
         }));
@@ -26,7 +27,8 @@ public class ActorTests
         // Arrange
         var actorSource = new CancellationTokenSource();
         var messageSource = new CancellationTokenSource();
-        var actor = Actor.Run(Props.Empty, actorSource.Token);
+
+        await using var actor = Actor.Run(Props.Empty, actorSource.Token);
     
         // Act
         // Assert
@@ -46,9 +48,11 @@ public class ActorTests
     {
         // Arrange
         var received = new List<int>();
+
         var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive(_ => received.Add(2));
+            builder.OnDispose(() => received.Add(5));
             builder.OnReceive(async (next, context, token) =>
             {
                 received.Add(1);
@@ -56,13 +60,15 @@ public class ActorTests
                 received.Add(3);
             });
             builder.OnReceive(_ => received.Add(4));
+            builder.OnDispose(() => received.Add(6));
         }));
     
         // Act
         await actor.Send("test");
+        await actor.DisposeAsync();
         
         // Assert
-        Assert.Equal(received, [1, 2, 3, 4]);
+        Assert.Equal(received, [1, 2, 3, 4, 5, 6]);
     }
 
     [Fact]
@@ -72,7 +78,8 @@ public class ActorTests
         var nullBeforeSend = false;
         var nullAfterSend = false;
         var hasInStatic = false;
-        var actor = Actor.Run(Props.From(builder =>
+
+        await using var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive(context =>
             {
@@ -98,7 +105,8 @@ public class ActorTests
     {
         // Arrange
         var processing = 0;
-        var actor = Actor.Run(Props.From(builder =>
+
+        await using var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive(async (context, token) =>
             {
@@ -127,7 +135,7 @@ public class ActorTests
     public async Task Actor_SendMessage_ThrowProcessingException()
     {
         // Arrange
-        var actor = Actor.Run(Props.From(builder =>
+        await using var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive(_ => throw null);
         }));

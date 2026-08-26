@@ -18,7 +18,8 @@ public class StageBenchmark
         var completed = false;
         var address = Address.FromString("test");
         var message = Message.Value(new LimitMessage(count));
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
@@ -47,7 +48,8 @@ public class StageBenchmark
         var completed = false;
         var address = Address.FromString("test");
         var message = Message.Value(new LimitMessage(count));
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
@@ -73,7 +75,8 @@ public class StageBenchmark
     {
         var completion = new TaskCompletionSource();
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {

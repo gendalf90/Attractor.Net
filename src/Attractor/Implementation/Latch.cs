@@ -4,7 +4,7 @@ internal class Latch(Strand strand)
 {
     private readonly LinkedList<Waiter> waiters = new();
 
-    public Task<IDisposable> Use(CancellationToken token)
+    public Task<IDisposable> Use(CancellationToken token = default)
     {
         return strand.Run(() =>
         {
@@ -13,7 +13,11 @@ internal class Latch(Strand strand)
             var node = waiters.AddLast(new Waiter());
 
             node.Value.Completion = new TaskCompletionSource<IDisposable>();
-            node.Value.Cancellation = token.Register(() => CancelWaiter(node));
+
+            if (token.CanBeCanceled)
+            {
+                node.Value.Cancellation = token.Register(() => CancelWaiter(node));
+            }
 
             if (waiters.Count == 1)
             {

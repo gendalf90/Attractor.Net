@@ -37,6 +37,9 @@ public static class Actor
         private readonly IHandler handler;
         private readonly CancellationToken cancellation;
         private readonly Latch latch;
+        private readonly Lock sync;
+
+        private bool disposed = false;
 
         public Process(IHandler handler, CancellationToken cancellation)
         {
@@ -44,10 +47,24 @@ public static class Actor
             this.cancellation = cancellation;
             
             strand = new Strand();
+            sync = new Lock();
             latch = new Latch(strand);
         }
 
-        public async Task Send(IMessage message, CancellationToken token)
+        Task IRef.Send(IMessage message, CancellationToken token)
+        {
+            lock (sync)
+            {
+                if (disposed)
+                {
+                    throw new ObjectDisposedException(nameof(IActor));
+                }
+
+                return RunSending(message, token);
+            }
+        }
+
+        private async Task RunSending(IMessage message, CancellationToken token)
         {
             ArgumentNullException.ThrowIfNull(message, nameof(message));
             
@@ -56,27 +73,50 @@ public static class Actor
             using (await latch.Use(source.Token))
             using (UseCancellation(this))
             {
-                await HandleMessage(message, source.Token);
+                await strand.Run(async () => 
+                {
+                    await handler.OnReceive(Context.From(message.Configure), source.Token);
+                });
             }
         }
 
-        private async Task HandleMessage(IMessage message, CancellationToken token)
+        ValueTask IAsyncDisposable.DisposeAsync()
         {
-            await strand.Run(async () => 
-            {
-                await handler.OnReceive(Context.From(message.Configure), token);
-            });
+            return new ValueTask(DisposeInternal());
         }
 
-        public CancellationToken Token => cancellation;
-    }
+        void IDisposable.Dispose()
+        {
+            DisposeInternal();
+        }
 
-    public static void With<T>(this IBuilder<IHandler> builder, T value) where T : class
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        ArgumentNullException.ThrowIfNull(value, nameof(value));
+        private Task DisposeInternal()
+        {
+            lock (sync)
+            {
+                if (disposed)
+                {
+                    return Task.CompletedTask;
+                }
 
-        builder.Decorate(() => new HandlerDecorator((next, context, token) => next(context.With(value), token)));
+                disposed = true;
+
+                return RunDisposing();
+            }
+        }
+
+        private async Task RunDisposing()
+        {
+            using (await latch.Use())
+            {
+                await strand.Run(async () => 
+                {
+                    await handler.DisposeAsync();
+                });
+            }
+        }
+
+        CancellationToken ICancellation.Token => cancellation;
     }
 
     public static void OnReceive(this IBuilder<IHandler> builder, DecorateReceiveAsync strategy)
@@ -84,7 +124,7 @@ public static class Actor
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
 
-        builder.Decorate(() => new HandlerDecorator(strategy));
+        builder.Decorate(() => new HandlerDecorator(onReceive: strategy));
     }
 
     public static void OnReceive(this IBuilder<IHandler> builder, ReceiveAsync strategy)
@@ -144,15 +184,36 @@ public static class Actor
         });
     }
 
+    public static void OnDispose(this IBuilder<IHandler> builder, Func<ValueTask> strategy)
+    {
+        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+        builder.Decorate(() => new HandlerDecorator(disposing: Disposable.Create(strategy)));
+    }
+
+    public static void OnDispose(this IBuilder<IHandler> builder, Action strategy)
+    {
+        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
+        ArgumentNullException.ThrowIfNull(strategy, nameof(strategy));
+
+        builder.Decorate(() => new HandlerDecorator(disposing: Disposable.Async(Disposable.Create(strategy))));
+    }
+
     private class DefaultHandler : IHandler
     {
         Task IHandler.OnReceive(IContext context, CancellationToken token)
         {
             return token.IsCancellationRequested ? Task.FromCanceled(token) : Task.CompletedTask;
         }
+
+        ValueTask IAsyncDisposable.DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
     }
 
-    private class HandlerDecorator(DecorateReceiveAsync onReceive = null) : IHandler, IDecorator<IHandler>
+    private class HandlerDecorator(DecorateReceiveAsync onReceive = null, IAsyncDisposable disposing = null) : IHandler, IDecorator<IHandler>
     {
         private IHandler decoratee;
 
@@ -164,6 +225,11 @@ public static class Actor
         Task IHandler.OnReceive(IContext context, CancellationToken token)
         {
             return onReceive == null ? decoratee.OnReceive(context, token) : onReceive(decoratee.OnReceive, context, token);
+        }
+
+        ValueTask IAsyncDisposable.DisposeAsync()
+        {
+            return disposing == null ? decoratee.DisposeAsync() : decoratee.With(disposing).DisposeAsync();
         }
     }
 }

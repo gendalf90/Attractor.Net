@@ -6,30 +6,41 @@ public static class Stage
 
     public static IStage Current => CurrentStage.Value;
     
-    public static IStage Run(Action<IRegistry> configuration, CancellationToken token = default)
+    public static ISystem Run(Action<IRegistry> configuration, CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
         
-        var result = new StageProcess(token);
+        var result = new SystemProcess(token);
 
         configuration(result);
 
         return result;
     }
     
-    private class StageProcess(CancellationToken cancellation) : IStage, IRegistry
+    private class SystemProcess(CancellationToken cancellation) : ISystem, IRegistry
     {
         private readonly Strand strand = new();
         private readonly Dictionary<IAddress, ActorProcess> actors = new(Address.EqualityComparer);
         private readonly Dictionary<IAddress, ActorLatch> latches = new(Address.EqualityComparer);
         private readonly LinkedList<ActorRegistration> registrations = new();
+        private readonly Lock sync = new();
+
         private IProps props = Props.Empty;
+        private bool disposed = false;
 
         IProxy IStage.Play(IAddress address)
         {
             ArgumentNullException.ThrowIfNull(address, nameof(address));
 
-            return new ActorProxy(address, this);
+            lock (sync)
+            {
+                if (disposed)
+                {
+                    throw new ObjectDisposedException(nameof(ISystem));
+                }
+
+                return new ActorProxy(address, this);
+            }
         }
 
         void IRegistry.Register(IRouter router, IProps props)
@@ -51,7 +62,7 @@ public static class Stage
         {
             return strand.Run(async () =>
             {
-                using (await Lock(address, cancellation))
+                using (await Lock(address))
                 {
                     if (!actors.TryGetValue(address, out var process))
                     {
@@ -62,7 +73,7 @@ public static class Stage
 
                     if (disposing)
                     {
-                        process.Dispose();
+                        await process.DisposeAsync();
                     }
                 }
             });
@@ -70,21 +81,29 @@ public static class Stage
 
         private Task Send(Guid proxyId, IAddress address, IMessage message, CancellationToken token)
         {
-            return strand.Run(async () =>
+            lock (sync)
             {
-                using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation, token);
-                
-                using (await Lock(address, source.Token))
+                if (disposed)
                 {
-                    var process = GetOrCreate(proxyId, address);
-
-                    using (UseStage(this))
-                    using (Address.UseAddress(address))
-                    {
-                        await process.Send(message, source.Token);
-                    }
+                    throw new ObjectDisposedException(nameof(ISystem));
                 }
-            });
+
+                return strand.Run(async () =>
+                {
+                    using var source = CancellationTokenSource.CreateLinkedTokenSource(cancellation, token);
+                    
+                    using (await Lock(address, source.Token))
+                    {
+                        var process = GetOrCreate(proxyId, address);
+
+                        using (UseStage(this))
+                        using (Address.UseAddress(address))
+                        {
+                            await process.Send(message, source.Token);
+                        }
+                    }
+                });
+            }
         }
 
         private ActorProcess GetOrCreate(Guid proxyId, IAddress address)
@@ -119,7 +138,7 @@ public static class Stage
             return process;
         }
 
-        private Task<IDisposable> Lock(IAddress address, CancellationToken token)
+        private Task<IDisposable> Lock(IAddress address, CancellationToken token = default)
         {
             if (!latches.TryGetValue(address, out var result))
             {
@@ -137,6 +156,33 @@ public static class Stage
             CurrentStage.Value = stage;
 
             return Disposable.Create(() => CurrentStage.Value = current);
+        }
+
+        ValueTask IAsyncDisposable.DisposeAsync()
+        {
+            lock (sync)
+            {
+                if (disposed)
+                {
+                    return ValueTask.CompletedTask;
+                }
+
+                disposed = true;
+
+                return new ValueTask(strand.Run(async () =>
+                {
+                    foreach (var address in actors.Keys.ToList())
+                    {
+                        using (await Lock(address))
+                        {
+                            if (actors.TryGetValue(address, out var process))
+                            {
+                                await process.DisposeAsync();
+                            }
+                        }
+                    }
+                }));
+            }
         }
 
         private record ActorRegistration(IRouter Router, IProps Props);
@@ -174,7 +220,7 @@ public static class Stage
             }
         }
 
-        private class ActorProcess(IActor actor, IDisposable disposing) : IRef, IDisposable
+        private class ActorProcess(IActor actor, IDisposable disposing) : IRef, IAsyncDisposable
         {
             private readonly HashSet<Guid> usings = new();
 
@@ -193,13 +239,16 @@ public static class Stage
                 needDispose = usings.Remove(id) && usings.Count == 0;
             }
 
-            public void Dispose()
+            public async ValueTask DisposeAsync()
             {
-                disposing.Dispose();
+                using (disposing)
+                {
+                    await actor.DisposeAsync();
+                }
             }
         }
 
-        private class ActorProxy(IAddress address, StageProcess stage) : IProxy
+        private class ActorProxy(IAddress address, SystemProcess system) : IProxy
         {
             private readonly Guid id = Guid.NewGuid();
             private readonly Lock sync = new();
@@ -215,18 +264,18 @@ public static class Stage
                         throw new ObjectDisposedException(nameof(IProxy));
                     }
 
-                    return stage.Send(id, address, message, token);
+                    return system.Send(id, address, message, token);
                 }
-            }
-
-            void IDisposable.Dispose()
-            {
-                DisposeInternal();
             }
 
             ValueTask IAsyncDisposable.DisposeAsync()
             {
                 return new ValueTask(DisposeInternal());
+            }
+
+            void IDisposable.Dispose()
+            {
+                DisposeInternal();
             }
 
             private Task DisposeInternal()
@@ -240,7 +289,7 @@ public static class Stage
 
                     disposed = true;
 
-                    return stage.Stop(id, address);
+                    return system.Stop(id, address);
                 }
             }
         }

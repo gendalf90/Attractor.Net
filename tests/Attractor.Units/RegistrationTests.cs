@@ -16,14 +16,14 @@ public class RegistrationTests
         services.AddTransient(_ => new TestHandler(_ => counter++));
         services.AddStage(registry =>
         {
-            registry.Handle<TestHandler>();
+            registry.Handle(provider => provider.GetRequiredService<TestHandler>());
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
-                builder.Handle<TestHandler>();
+                builder.Handle(provider => provider.GetRequiredService<TestHandler>());
             }));
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         var stage = provider.GetRequiredService<IStage>();
     
@@ -36,6 +36,11 @@ public class RegistrationTests
 
     private class TestHandler(Receive strategy) : IHandler
     {
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
         public Task OnReceive(IContext context, CancellationToken token)
         {
             strategy(context);
@@ -58,10 +63,10 @@ public class RegistrationTests
         services.AddStage(registry => 
         {
             registry.UseActors();
-            registry.Handle<TestHandler>();
+            registry.Handle(provider => provider.GetRequiredService<TestHandler>());
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
 
         var stage = provider.GetRequiredService<IStage>();
     
@@ -72,20 +77,28 @@ public class RegistrationTests
         // Assert
         Assert.Equal(4, results.Count(value => value == "test"));
         Assert.Equal(2, results.Count(value => value == "context"));
+        Assert.Equal(2, results.Count(value => value == "dispose"));
         Assert.Equal(1, results.Count(value => value == "int"));
         Assert.Equal(1, results.Count(value => value == "double"));
     }
 
     [Address($"^{nameof(AssemblyTestHandler)}$")]
     public class AssemblyTestHandler(List<string> results) : 
-        IHandler, 
-        IReceiver<Tuple<int>>, 
-        IReceiver<Tuple<double>>, 
+        IHandler,
+        IReceiver<Tuple<int>>,
+        IReceiver<Tuple<double>>,
         IProps
     {
         public void Configure(IBuilder<IHandler> builder)
         {
-            builder.Handle<TestHandler>();
+            builder.Handle(provider => provider.GetRequiredService<TestHandler>());
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            results.Add("dispose");
+
+            return ValueTask.CompletedTask;
         }
 
         public Task OnReceive(IContext context, CancellationToken token)

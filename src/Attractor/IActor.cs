@@ -1,3 +1,3 @@
 namespace Attractor;
 
-public interface IActor : IRef, ICancellation;
+public interface IActor : IRef, ICancellation, IDisposable, IAsyncDisposable;

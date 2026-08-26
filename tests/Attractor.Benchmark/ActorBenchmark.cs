@@ -18,7 +18,7 @@ public class ActorBenchmark
         var completed = false;
         var message = Message.Value(new LimitMessage(count));
         
-        var actor = Actor.Run(Props.From(builder =>
+        await using var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive<LimitMessage>(message =>
             {
@@ -41,7 +41,7 @@ public class ActorBenchmark
     {
         var completion = new TaskCompletionSource();
         
-        var actor = Actor.Run(Props.From(builder =>
+        await using var actor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive<PingMessage>(message =>
             {
@@ -70,7 +70,7 @@ public class ActorBenchmark
     {
         var completion = new TaskCompletionSource();
         
-        var pingActor = Actor.Run(Props.From(builder =>
+        await using var pingActor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive<PingPongMessage>(message =>
             {
@@ -85,7 +85,7 @@ public class ActorBenchmark
             });
         }));
 
-        var pongActor = Actor.Run(Props.From(builder =>
+        await using var pongActor = Actor.Run(Props.From(builder =>
         {
             builder.OnReceive<PingPongMessage>(message =>
             {

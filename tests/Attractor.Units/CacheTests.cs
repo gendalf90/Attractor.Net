@@ -9,7 +9,8 @@ public class CacheTests
         var message = "test";
         var received = false;
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
@@ -32,7 +33,8 @@ public class CacheTests
         var addressOne = Address.FromString("test1");
         var addressTwo = Address.FromString("test2");
         var canceled = false;
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(addressOne), Props.From(builder =>
             {

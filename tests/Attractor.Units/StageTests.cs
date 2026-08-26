@@ -9,7 +9,8 @@ public class SystemTests
         var message = "test";
         var received = false;
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
@@ -31,7 +32,8 @@ public class SystemTests
         var message = "test";
         var received = false;
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.OnReceive<string>(value => received = value == message);
             registry.Register(Address.FromExact(address), Props.Empty);
@@ -48,7 +50,7 @@ public class SystemTests
     public async Task Stage_SendMessage_ErrorIfActorIsNotRegistered()
     {
         // Arrange
-        var stage = Stage.Run(registry => { });
+        await using var stage = Stage.Run(registry => { });
     
         // Act
         // Assert
@@ -62,7 +64,8 @@ public class SystemTests
         var stageSource = new CancellationTokenSource();
         var messageSource = new CancellationTokenSource();
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.Empty);
         }, stageSource.Token);
@@ -84,7 +87,8 @@ public class SystemTests
         // Arrange
         var received = new List<string>();
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
@@ -116,7 +120,8 @@ public class SystemTests
         var nullAfterSend = false;
         var hasInStatic = false;
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
@@ -145,7 +150,8 @@ public class SystemTests
     {
         // Arrange
         var address = Address.FromString("test");
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {
@@ -164,7 +170,8 @@ public class SystemTests
         // Arrange
         var address = Address.FromString("test");
         var counter = 0;
-        var stage = Stage.Run(registry =>
+
+        await using var stage = Stage.Run(registry =>
         {
             registry.Register(Address.FromExact(address), Props.From(builder =>
             {

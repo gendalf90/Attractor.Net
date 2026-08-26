@@ -44,7 +44,7 @@ public static class Extensions
         ArgumentNullException.ThrowIfNull(services, nameof(services));
         ArgumentNullException.ThrowIfNull(configuration, nameof(configuration));
         
-        return services.AddSingleton<IStage>(provider => new HostStage(provider, Decorate(configuration, provider)));
+        return services.AddSingleton<IStage>(provider => new SystemHost(provider, Decorate(configuration, provider)));
     }
 
     private static Action<IRegistry> Decorate(Action<IRegistry> configuration, IServiceProvider provider)
@@ -81,6 +81,15 @@ public static class Extensions
                 if (instance is IHandler handler)
                 {
                     builder.OnReceive(handler.OnReceive);
+                    builder.OnDispose(handler.DisposeAsync);
+                }
+                else if (instance is IAsyncDisposable asyncDisposable)
+                {
+                    builder.OnDispose(asyncDisposable.DisposeAsync);
+                }
+                else if (instance is IDisposable disposable)
+                {
+                    builder.OnDispose(disposable.Dispose);
                 }
 
                 foreach (var type in info.ReceiverTypes)
@@ -135,26 +144,12 @@ public static class Extensions
         builder.Decorate(provider => new HandlerDecorator(factory(provider)));
     }
 
-    public static void Handle<T>(this IBuilder<IHandler> builder) where T : class, IHandler
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        
-        builder.Handle(provider => provider.GetRequiredService<T>());
-    }
-
     public static void Decorate<T>(this IBuilder<IHandler> builder, Func<IServiceProvider, T> factory) where T : class, IHandler, IDecorator<IHandler>
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(factory, nameof(factory));
         
         builder.Decorate(Partial(factory, Provider.Current ?? throw new InvalidOperationException()));
-    }
-
-    public static void Decorate<T>(this IBuilder<IHandler> builder) where T : class, IHandler, IDecorator<IHandler>
-    {
-        ArgumentNullException.ThrowIfNull(builder, nameof(builder));
-        
-        builder.Decorate(provider => provider.GetRequiredService<T>());
     }
 
     public static Task Send<T>(this IRef actor, T message, CancellationToken token = default) where T : class
@@ -195,39 +190,39 @@ public static class Extensions
             await decoratee.OnReceive(context, token);
             await handler.OnReceive(context, token);
         }
+
+        ValueTask IAsyncDisposable.DisposeAsync()
+        {
+            return decoratee.With(handler).DisposeAsync();
+        }
     }
 
-    private class HostStage : IStage
+    private class SystemHost : ISystem
     {
-        private readonly IStage stage;
-        private readonly CancellationTokenSource cancellation;
+        private readonly ISystem system;
         
-        public HostStage(IServiceProvider provider, Action<IRegistry> configuration)
+        public SystemHost(IServiceProvider provider, Action<IRegistry> configuration)
         {
             var lifetime = provider.GetService<IHostApplicationLifetime>();
 
             if (lifetime != null)
             {
-                stage = Stage.Run(configuration, lifetime.ApplicationStopping);
+                system = Stage.Run(configuration, lifetime.ApplicationStopping);
             }
             else
             {
-                cancellation = new CancellationTokenSource();
-                stage = Stage.Run(configuration, cancellation.Token);
+                system = Stage.Run(configuration);
             }
         }
         
-        public IProxy Play(IAddress address)
+        IProxy IStage.Play(IAddress address)
         {
-            return stage.Play(address);
+            return system.Play(address);
         }
 
-        public void Dispose()
+        ValueTask IAsyncDisposable.DisposeAsync()
         {
-            using (cancellation)
-            {
-                cancellation?.Cancel();
-            }
+            return system.DisposeAsync();
         }
     }
 }
