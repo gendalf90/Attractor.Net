@@ -21,12 +21,11 @@ internal class Builder<TResult>(TResult value) : IBuilder<TResult>
     {
         return decoratee =>
         {
-            var result = resultFactory(decoratee);
             var decorator = decoratorFactory();
 
-            decorator.Decorate(result);
+            decorator.Decorate(decoratee);
 
-            return decorator;
+            return resultFactory(decorator);
         };
     }
 }

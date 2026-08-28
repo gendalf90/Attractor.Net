@@ -134,8 +134,8 @@ public static class Actor
 
         builder.OnReceive(async (next, context, token) =>
         {
-            await next(context, token);
             await strategy(context, token);
+            await next(context, token);
         });
     }
 
@@ -229,7 +229,7 @@ public static class Actor
 
         ValueTask IAsyncDisposable.DisposeAsync()
         {
-            return disposing == null ? decoratee.DisposeAsync() : decoratee.With(disposing).DisposeAsync();
+            return disposing == null ? decoratee.DisposeAsync() : disposing.With(decoratee).DisposeAsync();
         }
     }
 }

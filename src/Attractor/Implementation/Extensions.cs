@@ -76,7 +76,7 @@ public static class Extensions
             
             registry.Register(router, Props.From(builder =>
             {
-                var instance = provider.GetRequiredService(info.Type);
+                var instance = ActivatorUtilities.CreateInstance(provider, info.Type);
 
                 if (instance is IHandler handler)
                 {
@@ -140,7 +140,7 @@ public static class Extensions
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-        
+
         builder.Decorate(provider => new HandlerDecorator(factory(provider)));
     }
 
@@ -148,21 +148,21 @@ public static class Extensions
     {
         ArgumentNullException.ThrowIfNull(builder, nameof(builder));
         ArgumentNullException.ThrowIfNull(factory, nameof(factory));
-        
+
         builder.Decorate(Partial(factory, Provider.Current ?? throw new InvalidOperationException()));
     }
 
     public static Task Send<T>(this IRef actor, T message, CancellationToken token = default) where T : class
     {
         ArgumentNullException.ThrowIfNull(actor, nameof(actor));
-        
+
         return actor.Send(Message.Value(message), token);
     }
 
     public static void Fire(this IRef actor, IMessage message, CancellationToken token = default)
     {
         ArgumentNullException.ThrowIfNull(actor, nameof(actor));
-        
+
         _ = actor.Send(message, token);
     }
 
@@ -187,8 +187,8 @@ public static class Extensions
 
         async Task IHandler.OnReceive(IContext context, CancellationToken token)
         {
-            await decoratee.OnReceive(context, token);
             await handler.OnReceive(context, token);
+            await decoratee.OnReceive(context, token);
         }
 
         ValueTask IAsyncDisposable.DisposeAsync()

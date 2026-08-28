@@ -51,15 +51,15 @@ public class ActorTests
 
         var actor = Actor.Run(Props.From(builder =>
         {
-            builder.OnReceive(_ => received.Add(2));
+            builder.OnReceive(_ => received.Add(1));
             builder.OnDispose(() => received.Add(5));
             builder.OnReceive(async (next, context, token) =>
             {
-                received.Add(1);
+                received.Add(2);
                 await next(context, token);
-                received.Add(3);
+                received.Add(4);
             });
-            builder.OnReceive(_ => received.Add(4));
+            builder.OnReceive(_ => received.Add(3));
             builder.OnDispose(() => received.Add(6));
         }));
     
