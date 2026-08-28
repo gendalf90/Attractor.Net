@@ -1,0 +1,4 @@
+{
+  "ExcludeDirectories": [ "bin", "obj" ],
+  "Convention": "InPlaceOverwrite"
+}

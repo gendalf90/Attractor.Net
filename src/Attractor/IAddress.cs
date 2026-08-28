@@ -1,9 +1,6 @@
-﻿using System;
+﻿namespace Attractor;
 
-namespace Attractor
+public interface IAddress
 {
-    public interface IAddress
-    {
-        ReadOnlyMemory<byte> GetBytes();
-    }
+    string Value { get; }
 }

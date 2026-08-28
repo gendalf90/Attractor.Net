@@ -1,9 +1,8 @@
-﻿using System;
+using System.Buffers;
 
-namespace Attractor
+namespace Attractor;
+
+public interface IPayload
 {
-    public interface IPayload
-    {
-        ReadOnlyMemory<byte> GetBytes();
-    }
+    void Write(IBufferWriter<byte> buffer);
 }

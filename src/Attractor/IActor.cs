@@ -1,10 +1,3 @@
-﻿using System.Threading;
-using System.Threading.Tasks;
+namespace Attractor;
 
-namespace Attractor
-{
-    public interface IActor
-    {
-        ValueTask OnReceiveAsync(ReceivedMessageContext context, CancellationToken token = default);
-    }
-}
+public interface IActor : IRef, ICancellation, IDisposable, IAsyncDisposable;
