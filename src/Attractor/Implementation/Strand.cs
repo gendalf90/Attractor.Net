@@ -123,7 +123,10 @@ internal class Strand
         {
             queue.Enqueue((d, state));
 
-            Touch();
+            if (TryLock())
+            {
+                ThreadPool.QueueUserWorkItem(execute);
+            }
         }
 
         public override void Send(SendOrPostCallback d, object state)
@@ -150,53 +153,36 @@ internal class Strand
             completion.Task.GetAwaiter().GetResult();
         }
 
+        public override SynchronizationContext CreateCopy()
+        {
+            return this;
+        }
+
         private void Execute(object state)
         {
-            ResetLock();
-            
-            try
-            {
-                Process();
-            }
-            catch
-            {
-                return;
-            }
-            finally
-            {
-                Unlock();
-            }
-        }
-
-        private void Unlock()
-        {
-            if (!TryUnlock())
-            {
-                ThreadPool.QueueUserWorkItem(execute);
-            }
-        }
-
-        public void Touch()
-        {
-            if (TryLock())
-            {
-                ThreadPool.QueueUserWorkItem(execute);
-            }
-        }
-
-        private void Process()
-        {
             SetSynchronizationContext(this);
-            
+
             while (queue.TryDequeue(out var command))
             {
                 try
                 {
                     command.Callback(command.State);
+
+                    if (TryUnlock())
+                    {
+                        break;
+                    }
                 }
                 catch
                 {
-                    continue;
+                    if (TryUnlock())
+                    {
+                        break;
+                    }
+                    else
+                    {
+                        continue;
+                    }
                 }
             }
         }
@@ -209,11 +195,6 @@ internal class Strand
         private bool TryUnlock()
         {
             return Interlocked.Decrement(ref counter) == UnlockValue;
-        }
-
-        private void ResetLock()
-        {
-            Interlocked.Exchange(ref counter, LockValue);
         }
     }
 }
